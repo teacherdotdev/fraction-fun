@@ -903,9 +903,11 @@
 
   .summary {
     position: absolute;
-    left: 50%;
+    /* Centred with auto margins: the build's CSS minifier drops \`translate\` here. */
+    left: 0;
+    right: 0;
+    margin-inline: auto;
     bottom: 96px;
-    translate: -50% 0;
     z-index: 2;
     width: max-content;
     max-width: calc(100vw - 32px);
@@ -953,10 +955,11 @@
 
   .math-bubble {
     position: absolute;
-    left: 50%;
+    left: 0;
+    right: 0;
+    width: max-content;
     bottom: 6px;
-    translate: -50% 0;
-    margin: 0;
+    margin: 0 auto;
     padding: 8px 22px;
     border-radius: 999px;
     background: #fff;
