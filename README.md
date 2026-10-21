@@ -23,7 +23,7 @@ For example `?n=3&d=4&of=24&item=pizza&mode=watch`. While a problem is being wor
 
 ### Teacher setup
 
-`/teacher` (also linked as "For teachers" on the question screen) builds these links: pick the numerator, denominator, whole, item and mode, see the question and whether it's valid (with nearby wholes that split evenly), then Copy link or Open. It's the same single-page app; `vercel.json` rewrites `/teacher` to `index.html` so a direct load works, and Vite's dev and preview servers already fall back to it.
+`/teacher` (the gear button beside the sound button) builds these links: pick the numerator, denominator, whole, item and mode, see the question and whether it's valid (with nearby wholes that split evenly), then Copy link or Open. It's the same single-page app; `vercel.json` rewrites `/teacher` to `index.html` so a direct load works, and Vite's dev and preview servers already fall back to it.
 
 ## Student steps
 
