@@ -70,6 +70,26 @@ _Avoid_: Screen, stage, phase, level
 The one group whose sprinkles the student counts. Its count is the unit share: one _d_-th of the whole.
 _Avoid_: First group, sample
 
+### Modes
+
+**Mode**:
+How a problem is worked: **Interactive** or **Watch**. One link has one mode. There are only these two.
+_Avoid_: Level, difficulty, setting
+
+**Interactive**:
+The student does every step themselves: choosing groups, throwing and counting sprinkles, picking groups. Wrong confirms get hints. The default.
+_Avoid_: Play mode, normal mode
+
+**Watch**:
+Each press of the step's button plays that step's work as an animation, with the same sounds; the student only chooses when to move on. Nothing can go wrong, so there are no hints.
+_Avoid_: Demo, auto-play, video, presentation mode
+
+### For teachers
+
+**Teacher setup**:
+The page where a teacher chooses a problem (numerator, denominator, whole), whether it's worked on a donut or a pizza, and the mode, and gets the student link to share.
+_Avoid_: Settings, admin, dashboard, builder
+
 ### Scaffolds
 
 **Scaffold**:

@@ -4,6 +4,7 @@
   import Donut, { type LandedSprinkle } from './components/Donut.svelte'
   import Island, { type Highlight } from './components/Island.svelte'
   import Stepper from './components/Stepper.svelte'
+  import { playStep } from './lib/autoplay'
   import { countingOrder, dealTo, sprinkleSlots } from './lib/donut'
   import type { Point } from './lib/donut'
   import { launchPoint, planFlight, positionAt, type Flight } from './lib/flight'
@@ -13,6 +14,7 @@
     fractionWords,
     MAX_DENOMINATOR,
     MAX_WHOLE,
+    modeFromParams,
     problemFromParams,
     shareOf,
   } from './lib/problem'
@@ -20,6 +22,8 @@
   import { hintFor, nextStep, STEPS, targetFor, type Step } from './lib/steps'
 
   const problem = problemFromParams(new URLSearchParams(location.search))
+  /** Watch mode: no −/+ or taps; each press plays the next step by itself. */
+  const watch = modeFromParams(new URLSearchParams(location.search)) === 'watch'
   const share = shareOf(problem)
   const pieces = fractionName(problem.denominator, 2)
   const COLORS = ['#ff4d4d', '#ffb020', '#ffe14d', '#2fbf71', '#3d8bff', '#9b5cff']
@@ -45,6 +49,8 @@
   let attempts = $state(0)
   let wobble = $state(false)
   let busy = $state(false)
+  /** Watch mode is playing a step; the button hides until the next step begins. */
+  let autoplaying = $state(false)
   let muted = $state(isMuted())
   let donut: Donut | undefined = $state()
   // The answer reveal.
@@ -116,7 +122,9 @@
   )
 
   const instruction = $derived(
-    shownStep === 'count'
+    watch
+      ? ''
+      : shownStep === 'count'
       ? 'Tap or click each sprinkle to count it.'
       : shownStep === 'pick'
         ? `Tap or click the ${pieces} you need.`
@@ -162,7 +170,7 @@
   }
 
   function wait(ms: number) {
-    return new Promise((resolve) => setTimeout(resolve, ms))
+    return new Promise<void>((resolve) => setTimeout(resolve, ms))
   }
 
   async function advance(delay = 0, sound: 'whoosh' | 'intro' = 'whoosh') {
@@ -174,6 +182,7 @@
     hintShown = false
     const from = step
     step = nextStep(step)
+    autoplaying = false
     pushStep(step)
     play(sound, { volume: sound === 'intro' ? 0.8 : 0.35 })
     busy = false
@@ -218,6 +227,7 @@
   function goBackTo(target: Step) {
     epoch += 1
     busy = false
+    autoplaying = false
     chopping = false
     attempts = 0
     hintShown = false
@@ -488,7 +498,8 @@
 
   // ——— Controls ———
   function confirm() {
-    if (busy) return
+    if (busy || autoplaying) return
+    if (watch) return watchStep()
     if (step === 'question') start()
     else if (step === 'groups') chop()
     else if (step === 'sprinkles') share_()
@@ -497,12 +508,39 @@
     else again()
   }
 
+  // ——— Watch mode ———
+  /** Plays the current step with the same actions a student's taps would trigger. */
+  function watchStep() {
+    const run = epoch
+    if (step !== 'question' && step !== 'answer') autoplaying = true
+    if (step === 'question') unlockAudio()
+    void playStep(step, problem, {
+      groups: () => groups,
+      changeGroups,
+      chop,
+      thrown: () => thrown,
+      throwSprinkle,
+      share: share_,
+      uncounted: () => countedSprinkles.length - countOrder.length,
+      countNext,
+      doneCounting,
+      kept: () => kept,
+      toggleGroup,
+      keep,
+      start,
+      again,
+      wait,
+      current: () => run === epoch,
+    })
+  }
+
   function onKey(event: KeyboardEvent) {
-    if (busy || (event.repeat && event.key === 'Enter')) return
+    if (busy || autoplaying || (event.repeat && event.key === 'Enter')) return
     const more = ['+', '=', 'ArrowRight', 'ArrowUp'].includes(event.key)
     const less = ['-', '_', 'ArrowLeft', 'ArrowDown'].includes(event.key)
     if (more || less) {
       event.preventDefault()
+      if (watch) return
       if (step === 'groups') changeGroups(more ? 1 : -1)
       else if (step === 'sprinkles') (more ? throwSprinkle : unthrowSprinkle)()
       else if (step === 'count' && more) countNext()
@@ -518,8 +556,16 @@
     if (!muted) play('click')
   }
 
+  // Watch mode names what each press is about to play; Confirm! and Done! only make
+  // sense after the student has done the work themselves.
   const confirmLabel = $derived(
-    { question: 'Start!', groups: 'Chop!', sprinkles: 'Confirm!', count: 'Done!', pick: 'Keep!', answer: 'Again!' }[shownStep],
+    watch
+      ? { question: 'Start!', groups: 'Chop!', sprinkles: 'Share!', count: 'Count!', pick: 'Keep!', answer: 'Again!' }[shownStep]
+      : { question: 'Start!', groups: 'Chop!', sprinkles: 'Confirm!', count: 'Done!', pick: 'Keep!', answer: 'Again!' }[shownStep],
+  )
+  /** The main button keeps its space but hides while it has nothing to do. */
+  const goHidden = $derived(
+    (hold && !showWhole) || (watch ? autoplaying : step === 'count' && !allCounted),
   )
 </script>
 
@@ -544,6 +590,13 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" class="line" /></svg>
     {/if}
   </button>
+
+  {#if step === 'question'}
+    <!-- Low-key and only on the question screen, so students don't land in it mid-problem.
+         Opens the setup with this problem filled in.
+         TODO(merge): also add a "Teacher setup" entry to the logo's About/Privacy menu. -->
+    <a class="for-teachers" href={`/teacher${location.search}`}>For teachers</a>
+  {/if}
 
   {#if step !== 'question'}
     <ol class="dots" class:gone={revealing} aria-label="Progress">
@@ -579,8 +632,8 @@
           {greyed}
           greyArt={step === 'count'}
           focus={step === 'count' ? COUNTED_GROUP : null}
-          onSprinkleTap={step === 'count' ? countSprinkle : undefined}
-          onGroupTap={step === 'pick' && !busy ? toggleGroup : undefined}
+          onSprinkleTap={step === 'count' && !watch ? countSprinkle : undefined}
+          onGroupTap={step === 'pick' && !busy && !watch ? toggleGroup : undefined}
         />
       </div>
       {#if step === 'pick' && pickedMath && !hold}
@@ -619,7 +672,14 @@
       <!-- Always there, blank when unused, so the controls never change height. -->
       <p class="instruction">{instruction || '\u00a0'}</p>
     {/if}
-    {#if step === 'groups'}
+    {#if watch && (step === 'groups' || step === 'sprinkles')}
+      <!-- Watch mode shows the number ticking up in the stepper's place, at its height. -->
+      {@const value = step === 'groups' ? groups : thrown}
+      <div class="picked" aria-live="polite">
+        {#key value}<span class="number">{value}</span>{/key}
+        <span class="label">{step === 'groups' ? (value === 1 ? 'group' : 'groups') : value === 1 ? 'sprinkle' : 'sprinkles'}</span>
+      </div>
+    {:else if step === 'groups'}
       <Stepper value={groups} label={groups === 1 ? 'group' : 'groups'} onMinus={() => changeGroups(-1)} onPlus={() => changeGroups(1)} {pulse} />
     {:else if step === 'sprinkles'}
       <Stepper
@@ -646,10 +706,10 @@
     <button
       class="go"
       class:big={step === 'question'}
-      class:waiting={(step === 'count' && !allCounted) || (hold && !showWhole)}
+      class:waiting={goHidden}
       onclick={confirm}
-      disabled={busy || (step === 'count' && !allCounted) || (hold && !showWhole)}
-      aria-hidden={(step === 'count' && !allCounted) || (hold && !showWhole)}
+      disabled={busy || goHidden}
+      aria-hidden={goHidden}
       >{showWhole ? 'Again!' : confirmLabel}</button
     >
   </footer>
@@ -707,6 +767,29 @@
     stroke: var(--ink);
     stroke-width: 2.2;
     stroke-linecap: round;
+  }
+
+  .for-teachers {
+    position: fixed;
+    right: 18px;
+    bottom: 14px;
+    z-index: 6;
+    padding: 6px 10px;
+    border-radius: 999px;
+    color: var(--ink-soft);
+    font: 500 15px/1.2 var(--font);
+    text-decoration: none;
+    opacity: 0.75;
+  }
+
+  .for-teachers:hover,
+  .for-teachers:focus-visible {
+    opacity: 1;
+    text-decoration: underline;
+  }
+
+  .for-teachers:focus-visible {
+    outline: 3px solid #ffd23f;
   }
 
   .dots {

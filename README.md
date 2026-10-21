@@ -14,6 +14,17 @@ One link is one problem: `?n=1&d=4&of=20` asks "What is one fourth of 20?" That'
 
 Anything invalid falls back to the default.
 
+Two optional params change how it's shown, and are left out for the defaults:
+
+- `item=pizza` works the problem on a pizza instead of the donut
+- `mode=watch` is **Watch** mode: no −/+ or taps, and each press of the step's button (Start!, Chop!, Share!, Count!, Keep!, Again!) plays that step as an animation. Without it the problem is **Interactive**.
+
+For example `?n=3&d=4&of=24&item=pizza&mode=watch`. While a problem is being worked the app adds `step=` for the browser's Back button; links shouldn't include it.
+
+### Teacher setup
+
+`/teacher` (also linked as "For teachers" on the question screen) builds these links: pick the numerator, denominator, whole, item and mode, see the question and whether it's valid (with nearby wholes that split evenly), then Copy link or Open. It's the same single-page app; `vercel.json` rewrites `/teacher` to `index.html` so a direct load works, and Vite's dev and preview servers already fall back to it.
+
 ## Student steps
 
 1. **Question**: the problem fills the screen. **Start!**
