@@ -3,6 +3,7 @@
   import Confetti from './components/Confetti.svelte'
   import Donut, { type LandedSprinkle } from './components/Donut.svelte'
   import Island, { type Highlight } from './components/Island.svelte'
+  import SiteChrome from './components/SiteChrome.svelte'
   import Stepper from './components/Stepper.svelte'
   import { countingOrder, dealTo, sprinkleSlots } from './lib/donut'
   import type { Point } from './lib/donut'
@@ -671,6 +672,8 @@
   </div>
 </main>
 
+<SiteChrome />
+
 <style>
   .app {
     height: 100dvh;
@@ -784,7 +787,7 @@
     padding: 8px 18px;
     border-radius: 999px;
     background: #ffd23f;
-    font: 600 clamp(17px, 2vw, 22px) / 1.3 var(--font);
+    font: 700 clamp(17px, 2vw, 22px) / 1.3 var(--font-text);
   }
 
   .summary {
@@ -802,7 +805,7 @@
     border-radius: 20px;
     background: #fff;
     box-shadow: 0 6px 24px #2b2b3a1a;
-    font: 600 clamp(15px, 1.7vw, 19px) / 1.3 var(--font);
+    font: 400 clamp(15px, 1.7vw, 19px) / 1.3 var(--font-text);
     opacity: 0;
     transform: translateY(12px);
     transition:
@@ -953,7 +956,7 @@
 
   .instruction {
     margin: 0;
-    font: 600 clamp(16px, 1.8vw, 20px) / 1.3 var(--font);
+    font: 400 clamp(16px, 1.8vw, 20px) / 1.3 var(--font-text);
     color: var(--ink-soft);
   }
 

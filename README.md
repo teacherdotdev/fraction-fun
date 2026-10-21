@@ -2,7 +2,7 @@
 
 fractionfun.org
 
-Find a fraction of a whole number by cutting a donut into equal groups and sharing sprinkles onto it. Built for Ms. Danna's students at Hampstead School. See `GLOSSARY.md` for the words we use and `docs/adr/` for the decisions behind them.
+Find a fraction of a whole number by cutting a donut into equal groups and sharing sprinkles onto it. See `GLOSSARY.md` for the words we use and `docs/adr/` for the decisions behind them.
 
 ## Setting a problem
 
