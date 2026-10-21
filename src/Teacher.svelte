@@ -197,7 +197,7 @@
       </fieldset>
     </section>
 
-    <section class="card preview" class:stale={!valid} aria-labelledby="preview-heading">
+    <section class="preview" class:stale={!valid} aria-labelledby="preview-heading">
       <h2 id="preview-heading">Students see</h2>
       <div class="art">
         {#if valid}
@@ -224,6 +224,7 @@
         <p class="working">Fix the problem to get a link.</p>
       {/if}
 
+      <div class="card share">
       <label class="link-label" for="link">Student link</label>
       <input
         id="link"
@@ -238,7 +239,7 @@
         <button type="button" class="primary" disabled={!valid} onclick={copy}>{copied ? 'Copied' : 'Copy link'}</button>
         <button type="button" class="secondary" disabled={!valid} onclick={open}>Open</button>
       </div>
-      <p class="help">Paste the link into Google Classroom, an email or a slide.</p>
+      </div>
     </section>
     </div>
   </main>
@@ -287,7 +288,7 @@
     align-items: center;
     gap: 10px;
     padding: 0 18px 0 11px;
-    border-radius: 999px;
+    border-radius: 14px;
     background: #fff;
     box-shadow: 0 4px 16px #2b2b3a1f;
     color: var(--ink);
@@ -369,7 +370,14 @@
   .preview {
     position: sticky;
     top: 20px;
+    display: grid;
     gap: 14px;
+    padding-top: 22px;
+  }
+
+  .share {
+    gap: 12px;
+    padding: 18px;
   }
 
   h2 {
@@ -661,7 +669,7 @@
   }
 
   .link-label {
-    margin: 4px 0 -6px;
+    margin: 0;
     font-size: 16px;
   }
 
