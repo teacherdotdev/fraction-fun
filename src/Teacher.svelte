@@ -1,5 +1,8 @@
 <script lang="ts">
+  import Donut, { type LandedSprinkle } from './components/Donut.svelte'
   import SiteChrome from './components/SiteChrome.svelte'
+  import { dealTo } from './lib/donut'
+  import { ITEM_WORDS, itemFromParams, type Item } from './lib/items'
   import {
     answerOf,
     MAX_DENOMINATOR,
@@ -15,17 +18,16 @@
     type ProblemField,
   } from './lib/problem'
 
-  // The pizza itself (`?item=pizza`) is drawn by the activity; setup only writes the param.
-  type Item = 'donut' | 'pizza'
-
-  // Opened from a student link ("For teachers"), the form starts on that problem.
+  // Opened from a student link (the settings button), the form starts on that problem,
+  // and Back returns to it.
   const params = new URLSearchParams(location.search)
+  const backTo = `/${location.search}`
   const start = problemFromParams(params)
 
   let numerator = $state<number | null>(start.numerator)
   let denominator = $state<number | null>(start.denominator)
   let whole = $state<number | null>(start.whole)
-  let item = $state<Item>(params.get('item') === 'pizza' ? 'pizza' : 'donut')
+  let item = $state<Item>(itemFromParams(params))
   let mode = $state<Mode>(modeFromParams(params))
   let copied = $state(false)
   let copyTimer = 0
@@ -41,18 +43,6 @@
   const valid = $derived(issues.length === 0)
   const link = $derived(`${location.origin}/?${problemQuery(problem, { item, mode })}`)
 
-  const FIELDS: { field: ProblemField; label: string; help: string; min: number; max: number }[] = [
-    { field: 'numerator', label: 'Numerator', help: 'Groups to keep', min: 1, max: MAX_DENOMINATOR - 1 },
-    {
-      field: 'denominator',
-      label: 'Denominator',
-      help: `Groups to cut, ${MIN_DENOMINATOR}–${MAX_DENOMINATOR}`,
-      min: MIN_DENOMINATOR,
-      max: MAX_DENOMINATOR,
-    },
-    { field: 'whole', label: 'Whole', help: `The "of" number, max ${MAX_WHOLE}`, min: 1, max: MAX_WHOLE },
-  ]
-
   function valueOf(field: ProblemField): number | null {
     return field === 'numerator' ? numerator : field === 'denominator' ? denominator : whole
   }
@@ -62,12 +52,6 @@
     if (field === 'numerator') numerator = value
     else if (field === 'denominator') denominator = value
     else whole = value
-  }
-
-  function nudge(field: ProblemField, delta: number, min: number, max: number) {
-    const current = valueOf(field)
-    const next = current === null || Number.isNaN(current) ? min : Math.round(current) + delta
-    set(field, Math.min(max, Math.max(min, next)))
   }
 
   function onInput(field: ProblemField, event: Event) {
@@ -93,7 +77,35 @@
     if (valid) window.open(link, '_blank', 'noopener')
   }
 
-  const itemName = $derived(item === 'pizza' ? 'pizza' : 'donut')
+  const ITEMS = Object.keys(ITEM_WORDS) as Item[]
+  const label = (it: Item) => ITEM_WORDS[it].name[0].toUpperCase() + ITEM_WORDS[it].name.slice(1)
+  const words = $derived(ITEM_WORDS[item])
+
+  // The preview: the item cut and shared as students will see it, with the kept groups in colour.
+  const COLORS = ['#ff4d4d', '#ffb020', '#ffe14d', '#2fbf71', '#3d8bff', '#9b5cff']
+  const toppings: LandedSprinkle[] = $derived(
+    valid
+      ? Array.from({ length: problem.whole }, (_, n) => ({
+          id: n,
+          deal: n,
+          ...dealTo(n, problem.denominator),
+          color: COLORS[(n * 5) % COLORS.length],
+          rotation: (n * 53) % 180,
+        }))
+      : [],
+  )
+  // A few toppings on each thumbnail, so a pizza reads as pepperoni pizza.
+  const sample: LandedSprinkle[] = Array.from({ length: 8 }, (_, n) => ({
+    id: n,
+    deal: n,
+    group: 0,
+    slot: n,
+    color: COLORS[(n * 5) % COLORS.length],
+    rotation: (n * 53) % 180,
+  }))
+  const notKept = $derived(
+    new Set(Array.from({ length: valid ? problem.denominator : 0 }, (_, g) => g).filter((g) => g >= problem.numerator)),
+  )
 </script>
 
 <svelte:head>
@@ -102,83 +114,98 @@
 
 <div class="teacher">
   <div class="page">
+  <a class="brand-box" href={backTo}>
+    <img src="/favicon.svg" alt="" width="30" height="30" />
+    Fraction Fun
+  </a>
+
   <main>
     <header>
-      <a class="home" href="/">Fraction Fun</a>
+      <a class="back" href={backTo}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+        Back
+      </a>
       <h1>Teacher setup</h1>
       <p class="lede">Choose a problem, then share the link with your students. Each link is one problem.</p>
     </header>
 
+    <div class="columns">
     <section class="card" aria-labelledby="problem-heading">
-      <h2 id="problem-heading">Problem</h2>
-      <div class="fields">
-        {#each FIELDS as { field, label, help, min, max } (field)}
-          {@const issue = issueFor(field)}
-          <div class="field" class:invalid={issue}>
-            <label for={field}>{label}</label>
-            <div class="spin">
-              <button type="button" aria-label={`${label} one less`} onclick={() => nudge(field, -1, min, max)}>−</button>
-              <input
-                id={field}
-                type="number"
-                inputmode="numeric"
-                {min}
-                {max}
-                step="1"
-                value={valueOf(field) ?? ''}
-                oninput={(event) => onInput(field, event)}
-                aria-invalid={issue ? 'true' : undefined}
-                aria-describedby={`${field}-help`}
-              />
-              <button type="button" aria-label={`${label} one more`} onclick={() => nudge(field, 1, min, max)}>+</button>
-            </div>
-            <p class="help" id={`${field}-help`}>{help}</p>
-          </div>
-        {/each}
-      </div>
-
-      <div class="issues" aria-live="polite">
-        {#each issues as issue (issue.field + issue.message)}
-          <p class="issue">
-            {issue.message}
-            {#if issue.suggestions?.length}
-              Try
-              {#each issue.suggestions as suggestion, i (suggestion)}
-                {#if i > 0}{' or '}{/if}<button type="button" class="suggestion" onclick={() => set('whole', suggestion)}>{suggestion}</button>
-              {/each}
-            {/if}
-          </p>
-        {/each}
-      </div>
+      <h2 id="problem-heading" class="sr-only">Problem</h2>
 
       <fieldset class="choice">
         <legend>Item</legend>
-        <div class="options">
-          <label class:on={item === 'donut'}><input type="radio" bind:group={item} value="donut" />Donut</label>
-          <label class:on={item === 'pizza'}><input type="radio" bind:group={item} value="pizza" />Pizza</label>
+        <div class="items">
+          {#each ITEMS as it (it)}
+            <label class="item" class:on={item === it}>
+              <input type="radio" bind:group={item} value={it} onchange={() => (copied = false)} />
+              <span class="thumb"><Donut item={it} groups={1} chopped sprinkles={sample} /></span>
+              {label(it)}
+            </label>
+          {/each}
         </div>
       </fieldset>
 
+      <div class="choice">
+        <span class="legend" id="sentence-label">Problem</span>
+        <p class="sentence" role="group" aria-labelledby="sentence-label">
+          <span>What is</span>
+          <span class="frac">
+            {@render number('numerator', 'Numerator', 1, 11)}
+            <span class="bar" aria-hidden="true"></span>
+            {@render number('denominator', 'Denominator', 2, 12)}
+          </span>
+          <span>of</span>
+          {@render number('whole', 'Whole', 1, 48)}
+          <span>?</span>
+        </p>
+        <p class="help">
+          Denominator {MIN_DENOMINATOR}–{MAX_DENOMINATOR}. The whole is at most {MAX_WHOLE} and must split evenly
+          into the groups.
+        </p>
+        <div class="issues" aria-live="polite">
+          {#each issues as issue (issue.field + issue.message)}
+            <p class="issue">
+              {issue.message}
+              {#if issue.suggestions?.length}
+                Try
+                {#each issue.suggestions as suggestion, i (suggestion)}
+                  {#if i > 0}{' or '}{/if}<button type="button" class="suggestion" onclick={() => set('whole', suggestion)}>{suggestion}</button>
+                {/each}
+              {/if}
+            </p>
+          {/each}
+        </div>
+      </div>
+
       <fieldset class="choice">
         <legend>Mode</legend>
-        <div class="options">
-          <label class:on={mode === 'interactive'}>
-            <input type="radio" bind:group={mode} value="interactive" />Interactive
+        <div class="modes">
+          <label class="mode" class:on={mode === 'interactive'}>
+            <input type="radio" bind:group={mode} value="interactive" onchange={() => (copied = false)} />
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11m0-1.5a1.5 1.5 0 0 1 3 0V11m0-.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-.6a6 6 0 0 1-4.9-2.6L4.3 15.3a1.6 1.6 0 0 1 2.5-2L9 15.5" />
+            </svg>
+            <span><strong>Interactive</strong>Students do each step</span>
           </label>
-          <label class:on={mode === 'watch'}><input type="radio" bind:group={mode} value="watch" />Watch</label>
+          <label class="mode" class:on={mode === 'watch'}>
+            <input type="radio" bind:group={mode} value="watch" onchange={() => (copied = false)} />
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" /><path d="M10 8.5v7l6-3.5z" class="fill" /></svg>
+            <span><strong>Watch</strong>Each press plays a step</span>
+          </label>
         </div>
-        <p class="help">
-          {#if mode === 'watch'}
-            Each press of the button plays the next step as an animation. Good for modelling to the class.
-          {:else}
-            Students do each step themselves, with hints if they get stuck.
-          {/if}
-        </p>
       </fieldset>
     </section>
 
     <section class="card preview" class:stale={!valid} aria-labelledby="preview-heading">
       <h2 id="preview-heading">Students see</h2>
+      <div class="art">
+        {#if valid}
+          <Donut {item} groups={problem.denominator} chopped sprinkles={toppings} greyed={notKept} />
+        {:else}
+          <Donut {item} groups={1} chopped={false} />
+        {/if}
+      </div>
       <p class="question" aria-label={`What is ${numerator ?? '?'} over ${denominator ?? '?'} of ${whole ?? '?'}?`}>
         <span>What is</span>
         <span class="fraction" aria-hidden="true">
@@ -190,11 +217,11 @@
       </p>
       {#if valid}
         <p class="working">
-          {problem.denominator} equal groups of {shareOf(problem)} on the {itemName}; keep {problem.numerator}.
-          Answer: <strong>{answerOf(problem)}</strong>
+          {problem.denominator} equal groups of {shareOf(problem)} {shareOf(problem) === 1 ? words.topping : words.toppings};
+          keep {problem.numerator}. Answer: <strong>{answerOf(problem)}</strong>
         </p>
       {:else}
-        <p class="working">Fix the problem above to get a link.</p>
+        <p class="working">Fix the problem to get a link.</p>
       {/if}
 
       <label class="link-label" for="link">Student link</label>
@@ -213,10 +240,28 @@
       </div>
       <p class="help">Paste the link into Google Classroom, an email or a slide.</p>
     </section>
+    </div>
   </main>
   <SiteChrome scrolls />
   </div>
 </div>
+
+{#snippet number(field: ProblemField, name: string, min: number, max: number)}
+  {@const issue = issueFor(field)}
+  <input
+    class="num"
+    class:invalid={issue}
+    type="number"
+    inputmode="numeric"
+    {min}
+    {max}
+    step="1"
+    aria-label={name}
+    value={valueOf(field) ?? ''}
+    oninput={(event) => onInput(field, event)}
+    aria-invalid={issue ? 'true' : undefined}
+  />
+{/snippet}
 
 <style>
   .teacher {
@@ -232,10 +277,32 @@
     min-height: 100%;
   }
 
+  /* Beside the teacher.dev logo: whose setup this is. */
+  .brand-box {
+    position: absolute;
+    top: 18px;
+    left: 82px;
+    height: 52px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 18px 0 11px;
+    border-radius: 999px;
+    background: #fff;
+    box-shadow: 0 4px 16px #2b2b3a1f;
+    color: var(--ink);
+    font: 700 19px/1 var(--font);
+    text-decoration: none;
+  }
+
+  .brand-box img {
+    border-radius: 7px;
+  }
+
   main {
-    max-width: 640px;
+    max-width: 1040px;
     margin: 0 auto;
-    padding: 32px 16px 72px;
+    padding: 96px 20px 72px;
     display: grid;
     gap: 20px;
   }
@@ -245,15 +312,31 @@
     gap: 6px;
   }
 
-  .home {
+  .back {
     justify-self: start;
-    color: var(--accent);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: -6px;
+    padding: 4px 10px 4px 4px;
+    border-radius: 999px;
+    color: var(--go);
     font: 700 18px/1.2 var(--font);
     text-decoration: none;
   }
 
-  .home:hover {
-    text-decoration: underline;
+  .back svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .back:hover {
+    background: #1f7ae014;
   }
 
   h1 {
@@ -267,13 +350,26 @@
     font: 400 18px/1.4 var(--font-text);
   }
 
+  .columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+  }
+
   .card {
     display: grid;
-    gap: 16px;
-    padding: 20px;
+    gap: 22px;
+    padding: 22px;
     border-radius: 24px;
     background: #fff;
     box-shadow: 0 6px 24px #2b2b3a1a;
+  }
+
+  .preview {
+    position: sticky;
+    top: 20px;
+    gap: 14px;
   }
 
   h2 {
@@ -281,86 +377,161 @@
     font: 700 22px/1.2 var(--font);
   }
 
-  .fields {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
-  }
-
-  .field {
-    display: grid;
-    gap: 6px;
-    align-content: start;
-  }
-
-  .field > label,
-  legend,
-  .link-label {
-    font: 600 17px/1.2 var(--font);
-    padding: 0;
-  }
-
-  .spin {
-    display: grid;
-    grid-template-columns: 40px minmax(0, 1fr) 40px;
-    align-items: center;
-    border: 2px solid #2b2b3a26;
-    border-radius: 14px;
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
     overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .choice {
+    margin: 0;
+    padding: 0;
+    border: none;
+    display: grid;
+    gap: 10px;
+  }
+
+  legend,
+  .legend,
+  .link-label {
+    padding: 0;
+    margin-bottom: 10px;
+    font: 700 18px/1.2 var(--font);
+  }
+
+  .legend {
+    margin-bottom: 0;
+  }
+
+  /* Radios are visually replaced by the cards around them. */
+  .choice input[type='radio'] {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .items {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 10px;
+  }
+
+  .item,
+  .mode {
+    border: 2px solid #2b2b3a1a;
+    border-radius: 18px;
     background: #fff;
-  }
-
-  .field.invalid .spin {
-    border-color: #d9363e;
-    background: #fff4f4;
-  }
-
-  .spin button {
-    height: 48px;
-    border: none;
-    background: transparent;
-    color: var(--ink);
-    font: 700 24px/1 var(--font);
+    color: var(--ink-soft);
     cursor: pointer;
-    touch-action: manipulation;
+    transition:
+      border-color 0.15s,
+      background-color 0.15s,
+      transform 0.15s;
   }
 
-  .spin button:hover {
-    background: #2b2b3a0d;
+  .item {
+    display: grid;
+    justify-items: center;
+    gap: 6px;
+    padding: 10px 6px 10px;
+    font: 700 16px/1.2 var(--font);
   }
 
-  .spin input {
+  .thumb {
+    width: 64px;
+    height: 64px;
+    pointer-events: none;
+  }
+
+  .item:hover,
+  .mode:hover {
+    border-color: #2b2b3a40;
+  }
+
+  .item.on,
+  .mode.on {
+    border-color: var(--go);
+    background: #1f7ae00f;
+    color: var(--ink);
+  }
+
+  .item:has(input:focus-visible),
+  .mode:has(input:focus-visible) {
+    outline: 3px solid #ffd23f;
+    outline-offset: 2px;
+  }
+
+  /* The problem written the way students see it, with each number editable. */
+  .sentence {
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    font: 700 34px/1 var(--font);
+  }
+
+  .frac {
+    display: inline-grid;
+    justify-items: center;
+    gap: 6px;
+  }
+
+  .frac .bar {
     width: 100%;
-    min-width: 0;
-    height: 48px;
-    border: none;
-    background: transparent;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--ink);
+  }
+
+  .num {
+    width: 76px;
+    height: 56px;
+    border: 2px dashed #2b2b3a40;
+    border-radius: 14px;
+    background: var(--bg);
     text-align: center;
     color: var(--ink);
-    font: 700 24px/1 var(--font);
+    font: 700 30px/1 var(--font);
     -moz-appearance: textfield;
     appearance: textfield;
   }
 
-  .spin input::-webkit-inner-spin-button,
-  .spin input::-webkit-outer-spin-button {
+  .frac .num {
+    width: 68px;
+    height: 48px;
+    font-size: 26px;
+  }
+
+  .num::-webkit-inner-spin-button,
+  .num::-webkit-outer-spin-button {
     -webkit-appearance: none;
     margin: 0;
   }
 
-  .spin input:focus {
-    outline: none;
+  .num:hover {
+    border-color: #2b2b3a80;
   }
 
-  .spin:focus-within {
-    outline: 3px solid #ffd23f;
-    outline-offset: 1px;
+  .num:focus {
+    outline: none;
+    border-style: solid;
+    border-color: var(--go);
+    background: #fff;
+  }
+
+  .num.invalid {
+    border-style: solid;
+    border-color: #d9363e;
+    background: #fff4f4;
   }
 
   .help {
     margin: 0;
     color: var(--ink-soft);
-    font: 400 15px/1.35 var(--font-text);
+    font: 400 15px/1.4 var(--font-text);
   }
 
   .issues {
@@ -397,45 +568,54 @@
     color: #fff;
   }
 
-  .choice {
-    margin: 0;
-    padding: 0;
-    border: none;
+  .modes {
     display: grid;
-    gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
   }
 
-  .options {
-    display: inline-flex;
-    justify-self: start;
-    padding: 4px;
-    gap: 4px;
-    border-radius: 999px;
-    background: #2b2b3a12;
+  .mode {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
   }
 
-  .options label {
-    padding: 8px 18px;
-    border-radius: 999px;
-    font: 600 17px/1.2 var(--font);
-    color: var(--ink-soft);
-    cursor: pointer;
+  .mode svg {
+    flex: none;
+    width: 30px;
+    height: 30px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
-  .options label.on {
-    background: #fff;
+  .mode .fill {
+    fill: currentColor;
+  }
+
+  .mode.on svg {
+    color: var(--go);
+  }
+
+  .mode span {
+    display: grid;
+    gap: 2px;
+    font: 400 14px/1.3 var(--font-text);
+  }
+
+  .mode strong {
     color: var(--ink);
-    box-shadow: 0 2px 8px #2b2b3a1f;
+    font: 700 17px/1.2 var(--font);
   }
 
-  .options label:has(input:focus-visible) {
-    outline: 3px solid #ffd23f;
-  }
-
-  .options input {
-    position: absolute;
-    opacity: 0;
-    pointer-events: none;
+  .art {
+    width: min(100%, 220px);
+    aspect-ratio: 1;
+    justify-self: center;
+    transition: opacity 0.2s;
   }
 
   .question {
@@ -445,7 +625,7 @@
     align-items: center;
     justify-content: center;
     gap: 0.3em;
-    font: 700 clamp(30px, 8vw, 44px) / 1.15 var(--font);
+    font: 700 34px/1.15 var(--font);
     transition: opacity 0.2s;
   }
 
@@ -464,7 +644,8 @@
     background: currentColor;
   }
 
-  .stale .question {
+  .stale .question,
+  .stale .art {
     opacity: 0.4;
   }
 
@@ -472,11 +653,16 @@
     margin: 0;
     text-align: center;
     color: var(--ink-soft);
-    font: 400 17px/1.4 var(--font-text);
+    font: 400 16px/1.4 var(--font-text);
   }
 
   .working strong {
     color: var(--accent);
+  }
+
+  .link-label {
+    margin: 4px 0 -6px;
+    font-size: 16px;
   }
 
   .link {
@@ -486,7 +672,7 @@
     border-radius: 14px;
     background: var(--bg);
     color: var(--ink);
-    font: 400 16px/1.3 var(--font-text);
+    font: 400 15px/1.3 var(--font-text);
   }
 
   .link:focus {
@@ -494,18 +680,14 @@
     outline-offset: 1px;
   }
 
-  .link-label {
-    margin-bottom: -8px;
-  }
-
   .actions {
     display: flex;
-    flex-wrap: wrap;
     gap: 12px;
   }
 
   .actions button {
-    padding: 12px 28px;
+    flex: 1;
+    padding: 12px 20px;
     border-radius: 999px;
     font: 700 20px/1 var(--font);
     cursor: pointer;
@@ -513,7 +695,6 @@
   }
 
   .primary {
-    min-width: 160px;
     border: none;
     background: var(--go);
     color: #fff;
@@ -537,47 +718,45 @@
     box-shadow: none;
   }
 
-  /* Clear the logo in the top-left corner once the page is too narrow to sit beside it. */
-  @media (max-width: 800px) {
-    main {
-      padding-top: 84px;
+  /* One column: the preview follows the form. */
+  @media (max-width: 860px) {
+    .columns {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .preview {
+      position: static;
     }
   }
 
   @media (max-width: 520px) {
+    main {
+      padding-inline: 14px;
+    }
 
     .card {
       padding: 16px;
     }
 
-    .fields {
-      grid-template-columns: 1fr;
+    .sentence {
+      font-size: 28px;
+      gap: 8px;
     }
 
-    .field {
-      grid-template-columns: minmax(0, 1fr) 136px;
-      align-items: center;
-      column-gap: 12px;
+    .num {
+      width: 64px;
     }
 
-    .field .help {
-      grid-column: 1;
-      grid-row: 2;
-      margin-top: -4px;
-    }
-
-    .spin {
-      grid-column: 2;
-      grid-row: 1 / span 2;
-    }
-
-    .actions button {
-      flex: 1;
+    .modes {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .question {
+    .question,
+    .art,
+    .item,
+    .mode {
       transition: none;
     }
   }
