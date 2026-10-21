@@ -3,7 +3,7 @@
   import Donut, { type LandedSprinkle } from './components/Donut.svelte'
   import SiteChrome from './components/SiteChrome.svelte'
   import { dealTo } from './lib/donut'
-  import { ITEM_WORDS, itemFromParams, type Item } from './lib/items'
+  import { ITEM_WORDS, ITEMS, itemFromParams, type Item } from './lib/items'
   import {
     answerOf,
     MAX_DENOMINATOR,
@@ -78,8 +78,6 @@
     if (valid) window.open(link, '_blank', 'noopener')
   }
 
-  const ITEMS = Object.keys(ITEM_WORDS) as Item[]
-  const label = (it: Item) => ITEM_WORDS[it].name[0].toUpperCase() + ITEM_WORDS[it].name.slice(1)
   const words = $derived(ITEM_WORDS[item])
 
   // The preview: the item cut and shared as students will see it, with the kept groups in colour.
@@ -138,7 +136,7 @@
             <label class="item" class:on={item === it}>
               <input type="radio" bind:group={item} value={it} onchange={() => (copied = false)} />
               <span class="thumb"><Donut item={it} groups={1} chopped sprinkles={sample} /></span>
-              {label(it)}
+              {ITEM_WORDS[it].label}
             </label>
           {/each}
         </div>

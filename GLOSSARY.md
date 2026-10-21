@@ -1,6 +1,6 @@
 # Fraction Fun
 
-A student-facing activity for finding a fraction of a whole number by cutting a round food (a donut or a pizza) into equal groups and sharing toppings onto it.
+A student-facing activity for finding a fraction of a whole number by cutting a round food (a donut, a pizza, a cookie, a cake, a watermelon or a cheese) into equal groups and sharing toppings onto it.
 
 ## Language
 
@@ -25,7 +25,7 @@ _Avoid_: Top number, parts wanted
 ### On screen
 
 **Item**:
-The round food a problem is worked on: a **donut** (the default) or a **pizza**. One problem uses one item from start to finish.
+The round food a problem is worked on: a **donut** (the default), a **pizza**, a **cookie**, a **cake**, a **watermelon** or a **cheese**. One problem uses one item from start to finish.
 _Avoid_: Food, object, shape
 
 **Donut**:
@@ -33,8 +33,23 @@ The default item: a ring with a hole in the middle, frosted on top.
 _Avoid_: Bagel, ring
 
 **Pizza**:
-The other item: a whole round pizza with no hole, so its groups are wedges that meet in the middle.
+A whole round pizza with no hole, so its groups are wedges that meet in the middle. Every item but the donut is whole like this.
 _Avoid_: Pie
+
+**Cookie**:
+A round chocolate chip cookie, seen from above.
+_Avoid_: Biscuit
+
+**Cake**:
+A round frosted cake seen from above, with a piped border round its edge.
+
+**Watermelon**:
+A round slice across a whole watermelon: green rind, a pale band, red inside.
+_Avoid_: Melon
+
+**Cheese**:
+A whole round cheese, seen from above, with a waxy rind round its edge.
+_Avoid_: Cheese wheel, Swiss cheese
 
 **Cut line**:
 A dotted preview of where the item will be chopped, shown before chopping.
@@ -45,7 +60,7 @@ One equal piece of the chopped item together with the toppings on it. The only w
 _Avoid_: Slice, part, quadrant, section, piece
 
 **Topping**:
-One unit of the whole, thrown onto a group. Each item has its own: **sprinkles** on a donut, **pepperoni** on a pizza (one pepperoni, two pepperoni). Students only ever see the item's own word.
+One unit of the whole, dealt onto a group. Each item has its own: **sprinkles** on a donut, **pepperoni** on a pizza (one pepperoni, two pepperoni), **chips** (chocolate chips) on a cookie, **candles** on a cake, **seeds** in a watermelon, **holes** in a cheese. Students only ever see the item's own word.
 _Avoid_: Counter, object, item, dot, piece
 
 **Sprinkle**:
@@ -55,8 +70,27 @@ The donut's topping.
 The pizza's topping. The same word for one or many.
 _Avoid_: Pepperonis, salami
 
+**Chip**:
+The cookie's topping: a chocolate chip. Students see "chip"; on a cookie it can't mean anything else.
+_Avoid_: Chunk, chocolate (on its own)
+
+**Candle**:
+The cake's topping.
+
+**Seed**:
+The watermelon's topping: a black seed in the red.
+_Avoid_: Pip
+
+**Hole**:
+The cheese's topping: a round dent in the cheese. Counted like any other topping.
+_Avoid_: Bubble, eye
+
+**Arrival**:
+How an item's toppings reach their groups: **thrown** in an arc from the edge of the screen (sprinkles, pepperoni, chips, candles), or **popping up** where they're dealt, growing out of the food (seeds, holes). Either way they're dealt in the same order, and taking one back makes it vanish with a poof.
+_Avoid_: Drop, spawn
+
 **Dealing**:
-Toppings landing on each group in turn, so every group always has an equal share or is one behind.
+Toppings arriving on each group in turn, so every group always has an equal share or is one behind.
 _Avoid_: Distributing, dropping
 
 **Glazed group**:
@@ -92,7 +126,7 @@ How a problem is worked: **Interactive** or **Watch**. One link has one mode. Th
 _Avoid_: Level, difficulty, setting
 
 **Interactive**:
-The student does every step themselves: choosing groups, throwing and counting sprinkles, picking groups. Wrong confirms get hints. The default.
+The student does every step themselves: choosing groups, dealing and counting toppings, picking groups. Wrong confirms get hints. The default.
 _Avoid_: Play mode, normal mode
 
 **Watch**:
@@ -102,7 +136,7 @@ _Avoid_: Demo, auto-play, video, presentation mode
 ### For teachers
 
 **Teacher setup**:
-The page where a teacher chooses a problem (numerator, denominator, whole), whether it's worked on a donut or a pizza, and the mode, and gets the student link to share.
+The page where a teacher chooses a problem (numerator, denominator, whole), which item it's worked on, and the mode, and gets the student link to share.
 _Avoid_: Settings, admin, dashboard, builder
 
 ### Scaffolds
@@ -114,7 +148,7 @@ _Avoid_: Guided mode, support, help
 The scaffolds are:
 - **Cut preview**: cut lines show while choosing the number of groups.
 - **Hints**: a wrong confirm gets a hint instead of nothing.
-- **Auto-dealing**: toppings deal themselves onto groups as they're thrown.
+- **Auto-dealing**: toppings deal themselves onto groups as they arrive.
 - **Counting stop**: each topping can only be counted once, and Done! only appears once every topping in the counted group is counted.
 - **Running math**: while picking, the sum of the kept groups shows as it grows ("5 + 5 = 10").
 - **Island highlight**: the part of the problem that matters for the current step stands out in the island.

@@ -10,7 +10,8 @@
   import { countingOrder, dealTo, sprinkleSlots } from './lib/donut'
   import type { Point } from './lib/donut'
   import { launchPoint, planFlight, positionAt, type Flight } from './lib/flight'
-  import { ITEM_WORDS, itemFromParams, toppingsFor } from './lib/items'
+  import { ITEM_TOPPING } from './components/items'
+  import { ARRIVAL, ITEM_WORDS, itemFromParams, toppingsFor } from './lib/items'
   import {
     answerOf,
     fractionName,
@@ -21,7 +22,7 @@
     problemFromParams,
     shareOf,
   } from './lib/problem'
-  import { chopThud, isMuted, play, poof, setMuted, stepDown, swoosh, stepUp, unlockAudio } from './lib/sound'
+  import { bloop, chopThud, isMuted, play, poof, setMuted, stepDown, swoosh, stepUp, unlockAudio } from './lib/sound'
   import { hintFor, nextStep, STEPS, targetFor, type Step } from './lib/steps'
 
   const problem = problemFromParams(new URLSearchParams(location.search))
@@ -30,6 +31,10 @@
   // The food being shared (?item=pizza), and its words: "sprinkles" or "pepperoni".
   const item = itemFromParams(new URLSearchParams(location.search))
   const words = ITEM_WORDS[item]
+  /** Seeds and holes pop up where they're dealt; everything else is thrown. */
+  const pops = ARRIVAL[item] === 'pop'
+  /** Drawn toppings (chocolate chips, candles) fly as their own drawing. */
+  const FlyingTopping = item === 'donut' || item === 'pizza' ? null : ITEM_TOPPING[item]
   const share = shareOf(problem)
   const pieces = fractionName(problem.denominator, 2)
   const COLORS = ['#ff4d4d', '#ffb020', '#ffe14d', '#2fbf71', '#3d8bff', '#9b5cff']
@@ -311,7 +316,9 @@
   }
 
   // ——— Sprinkles ———
+  /** Deals the next topping: thrown in from the edge, or popping up in place. */
   function throwSprinkle() {
+    if (pops) return popTopping()
     if (thrown >= MAX_WHOLE || !donut) return play('limit')
     const { group, slot } = dealTo(thrown, problem.denominator)
     const aim = donut.screenPoint(group, slot)
@@ -339,6 +346,17 @@
     )
   }
 
+  /** A seed or hole appears straight away in its slot, with a bloop; nothing flies. */
+  function popTopping() {
+    if (thrown >= MAX_WHOLE || !donut) return play('limit')
+    const { group, slot } = dealTo(thrown, problem.denominator)
+    thrown += 1
+    stepUp(thrown - 1)
+    bloop()
+    const deal = thrown - 1
+    landed = [...landed, { id: nextId++, deal, group, slot, color: '', rotation: Math.round(Math.random() * 180) }]
+  }
+
   /** Takes back the most recent sprinkle with a poof, whether it's landed or still in the air. */
   function unthrowSprinkle() {
     if (thrown === 0) return play('limit')
@@ -363,8 +381,11 @@
     if (at) puff(at)
   }
 
+  /** ±5: five throws in quick succession; pop-ups come a little quicker still. */
   function repeat(times: number, action: () => void) {
-    for (let i = 0; i < times; i += 1) setTimeout(action, i * 90)
+    const run = epoch
+    const gap = pops ? 70 : 90
+    for (let i = 0; i < times; i += 1) setTimeout(() => run === epoch && action(), i * gap)
   }
 
   function puff(at: { x: number; y: number }) {
@@ -733,11 +754,20 @@
       </span>
     {/each}
     {#each flying as f (f.id)}
+      {#if FlyingTopping}
+        <!-- The same drawing as the landed topping, spinning as it flies. -->
+        <svg
+          class="topping"
+          viewBox="-16 -16 32 32"
+          style={`transform: translate(${f.x}px, ${f.y}px) scale(${donut?.unitScale() ?? 1})`}
+        ><FlyingTopping rotation={f.rotation} toward={f.rotation} /></svg>
+      {:else}
       <span
         class="sprinkle"
         class:pepperoni={item === 'pizza'}
         style={`transform: translate(${f.x}px, ${f.y}px) rotate(${f.rotation}deg) scale(${donut?.unitScale() ?? 1});${item === 'pizza' ? '' : ` background: ${f.color}`}`}
       ></span>
+      {/if}
     {/each}
   </div>
 </main>
@@ -1136,6 +1166,16 @@
       radial-gradient(circle at 48% 70%, #f3b892 0 1.7px, transparent 2.1px),
       radial-gradient(circle at 48% 48%, #c4372b 0 9px, #a3261f 9.4px);
     box-shadow: 1px 2.5px 0 #2b2b3a33;
+  }
+
+  /* A thrown chocolate chip or candle: its own drawing, 32 units across like the landed one. */
+  .flying .topping {
+    position: absolute;
+    left: -16px;
+    top: -16px;
+    width: 32px;
+    height: 32px;
+    overflow: visible;
   }
 
   .app:not(.started) {
