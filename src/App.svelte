@@ -3,6 +3,7 @@
   import Confetti from './components/Confetti.svelte'
   import Donut, { type LandedSprinkle } from './components/Donut.svelte'
   import Island, { type Highlight } from './components/Island.svelte'
+  import BrandBox from './components/BrandBox.svelte'
   import SiteChrome from './components/SiteChrome.svelte'
   import Stepper from './components/Stepper.svelte'
   import { playStep } from './lib/autoplay'
@@ -741,6 +742,7 @@
   </div>
 </main>
 
+<BrandBox />
 <SiteChrome />
 
 <style>

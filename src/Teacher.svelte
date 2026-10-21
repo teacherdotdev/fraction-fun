@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BrandBox from './components/BrandBox.svelte'
   import Donut, { type LandedSprinkle } from './components/Donut.svelte'
   import SiteChrome from './components/SiteChrome.svelte'
   import { dealTo } from './lib/donut'
@@ -114,10 +115,7 @@
 
 <div class="teacher">
   <div class="page">
-  <a class="brand-box" href={backTo}>
-    <img src="/favicon.svg" alt="" width="30" height="30" />
-    Fraction Fun
-  </a>
+  <BrandBox href={backTo} scrolls />
 
   <main>
     <header>
@@ -276,28 +274,6 @@
   .page {
     position: relative;
     min-height: 100%;
-  }
-
-  /* Beside the teacher.dev logo: whose setup this is. */
-  .brand-box {
-    position: absolute;
-    top: 18px;
-    left: 82px;
-    height: 52px;
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    padding: 0 18px 0 11px;
-    border-radius: 14px;
-    background: #fff;
-    box-shadow: 0 4px 16px #2b2b3a1f;
-    color: var(--ink);
-    font: 700 19px/1 var(--font);
-    text-decoration: none;
-  }
-
-  .brand-box img {
-    border-radius: 7px;
   }
 
   main {
