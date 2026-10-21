@@ -198,7 +198,7 @@
     </section>
 
     <section class="preview" class:stale={!valid} aria-labelledby="preview-heading">
-      <h2 id="preview-heading">Students see</h2>
+      <h2 id="preview-heading" class="sr-only">Students see</h2>
       <div class="art">
         {#if valid}
           <Donut {item} groups={problem.denominator} chopped sprinkles={toppings} greyed={notKept} />
