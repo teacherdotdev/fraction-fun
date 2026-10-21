@@ -1,532 +1,995 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { fly, scale } from 'svelte/transition'
+  import Confetti from './components/Confetti.svelte'
+  import Donut, { type LandedSprinkle } from './components/Donut.svelte'
+  import Island, { type Highlight } from './components/Island.svelte'
+  import Stepper from './components/Stepper.svelte'
+  import { countingOrder, dealTo, sprinkleSlots } from './lib/donut'
+  import type { Point } from './lib/donut'
+  import { launchPoint, planFlight, positionAt, type Flight } from './lib/flight'
   import {
-    DEFAULT_SETTINGS,
-    DENOMINATOR_CHOICES,
-    NUMBER_CHOICES,
-    settingsFromParams,
-    settingsToQuery,
-    validProblemCount,
-    type ActivitySettings,
-    type Food,
-  } from './lib/settings'
+    answerOf,
+    fractionName,
+    fractionWords,
+    MAX_DENOMINATOR,
+    MAX_WHOLE,
+    problemFromParams,
+    shareOf,
+  } from './lib/problem'
+  import { isMuted, play, poof, setMuted, stepDown, stepUp, unlockAudio } from './lib/sound'
+  import { hintFor, nextStep, STEPS, targetFor, type Step } from './lib/steps'
 
-  type Problem = { numerator: number; denominator: number; total: number; food: Exclude<Food, 'mix'> }
-  type Step = 'fraction' | 'groups' | 'slicer' | 'drop' | 'answer' | 'complete'
+  const problem = problemFromParams(new URLSearchParams(location.search))
+  const share = shareOf(problem)
+  const pieces = fractionName(problem.denominator, 2)
+  const COLORS = ['#ff4d4d', '#ffb020', '#ffe14d', '#2fbf71', '#3d8bff', '#9b5cff']
+  const COUNTED_GROUP = 0
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
 
-  const urlParams = new URLSearchParams(window.location.search)
-  const studentMode = urlParams.get('play') === '1'
-  let settings = $state<ActivitySettings>(
-    studentMode ? settingsFromParams(urlParams) : structuredClone(DEFAULT_SETTINGS),
+  type Flying = { id: number; color: string; rotation: number; x: number; y: number; spin: number }
+  type Poof = { id: number; x: number; y: number; size: number }
+
+  let step = $state<Step>('question')
+  let groups = $state(1)
+  let chopped = $state(false)
+  let chopping = $state(false)
+  let landed: LandedSprinkle[] = $state([])
+  let flying: Flying[] = $state([])
+  /** Sprinkles thrown so far, including ones still in the air. */
+  let thrown = $state(0)
+  /** Sprinkle ids in the order the student tapped them. */
+  let countOrder: number[] = $state([])
+  let poofs: Poof[] = $state([])
+  let kept = $state(new Set<number>())
+  let fallen = $state(new Set<number>())
+  let attempts = $state(0)
+  let wobble = $state(false)
+  let busy = $state(false)
+  let muted = $state(isMuted())
+  let donut: Donut | undefined = $state()
+
+  let nextId = 0
+  type FlightEntry = { flight: Flight; started: number; onLand?: () => void; deal?: number }
+  const flights = new Map<number, FlightEntry>()
+  let frame = 0
+
+  const hint = $derived(hintFor(problem, step, attempts))
+  const target = $derived(targetFor(problem, step))
+
+  const highlight: Highlight = $derived(
+    step === 'groups' ? 'denominator' : step === 'sprinkles' ? 'whole' : step === 'pick' ? 'numerator' : null,
   )
-  let origin = $state('')
-  let loaded = $state(false)
-  let copied = $state(false)
-  let activityStarted = $state(false)
-  let problems = $state<Problem[]>([])
-  let questionIndex = $state(0)
-  let step = $state<Step>('fraction')
-  let message = $state('')
-  let firstTry = $state(true)
-  let stars = $state(0)
-  let slicerAttached = $state(false)
 
-  const problem = $derived(problems[questionIndex])
-  const answer = $derived(problem ? (problem.total / problem.denominator) * problem.numerator : 0)
-  const groupSize = $derived(problem ? problem.total / problem.denominator : 0)
-  const shareLink = $derived(`${origin}/?${settingsToQuery(settings)}`)
-  const validCount = $derived(validProblemCount(settings))
-  const previewProblem = $derived(
-    settings.numbers
-      .flatMap((total) =>
-        settings.denominators
-          .filter((denominator) => total % denominator === 0)
-          .map((denominator) => ({ total, denominator })),
-      )[0] ?? { total: 20, denominator: 4 },
+  const prompt = $derived(
+    {
+      question: '',
+      groups: 'How many equal groups do we need?',
+      sprinkles: `What are we splitting into ${pieces}?`,
+      count: 'How many sprinkles in one group?',
+      pick: `How many ${pieces} do we need?`,
+      answer: '',
+    }[step],
   )
 
-  onMount(() => {
-    origin = window.location.origin
-    if (!studentMode) {
-      const saved = localStorage.getItem('fractionfall-working')
-      if (saved) settings = settingsFromParams(new URLSearchParams(saved))
+  /** The counted group's sprinkles, swept clockwise, for counting from the keyboard. */
+  const countedSprinkles = $derived.by(() => {
+    const inGroup = landed.filter((s) => s.group === COUNTED_GROUP)
+    const slots = sprinkleSlots(COUNTED_GROUP, problem.denominator, Math.ceil(MAX_WHOLE / problem.denominator))
+    const order = countingOrder(slots, COUNTED_GROUP, problem.denominator)
+    return order.flatMap((slot) => inGroup.filter((s) => s.slot === slot))
+  })
+
+  const counts = $derived(new Map(countOrder.map((id, i) => [id, i + 1] as const)))
+  const allCounted = $derived(countOrder.length > 0 && countOrder.length === countedSprinkles.length)
+
+  const greyed = $derived.by(() => {
+    if (step === 'pick' || step === 'answer') {
+      return new Set(range(problem.denominator).filter((g) => !glazed.has(g)))
     }
-    loaded = true
+    return new Set<number>()
   })
 
-  $effect(() => {
-    const query = settingsToQuery(settings)
-    if (loaded && !studentMode) localStorage.setItem('fractionfall-working', query)
+  /** "5 = 5", "5 + 5 = 10"… for the groups picked so far. */
+  const pickedMath = $derived(
+    kept.size ? `${Array(kept.size).fill(share).join(' + ')} = ${kept.size * share}` : '',
+  )
+
+  const instruction = $derived(
+    step === 'count'
+      ? 'Tap or click each sprinkle to count it.'
+      : step === 'pick'
+        ? `Tap or click the ${pieces} you need.`
+        : '',
+  )
+
+  const dimmed = $derived.by(() => {
+    if (step === 'count') {
+      return new Set(range(problem.denominator).filter((i) => i !== COUNTED_GROUP))
+    }
+    return new Set<number>()
   })
 
-  function toggleNumber(value: number) {
-    const previous = settings.numbers
-    if (settings.numbers.includes(value)) {
-      if (settings.numbers.length > 1) settings.numbers = settings.numbers.filter((n) => n !== value)
-    } else settings.numbers = [...settings.numbers, value].sort((a, b) => a - b)
-    if (validProblemCount(settings) === 0) settings.numbers = previous
+  const glazed = $derived.by(() => {
+    if (step === 'count') return new Set([COUNTED_GROUP])
+    if (step === 'pick') return kept
+    if (step === 'answer') return kept
+    return new Set<number>()
+  })
+
+  const groupBadges = $derived.by(() => {
+    if (step === 'pick') return new Map([...glazed].map((g) => [g, share] as const))
+    return new Map<number, number>()
+  })
+
+  const pulse = $derived.by((): 'minus' | 'plus' | null => {
+    if (!hint?.pulse || target === null) return null
+    const value = step === 'groups' ? groups : thrown
+    return value < target ? 'plus' : 'minus'
+  })
+
+  const pulseGroups = $derived.by(() => {
+    if (step !== 'pick' || !hint?.pulse) return new Set<number>()
+    const tooFew = kept.size < problem.numerator
+    return new Set(range(problem.denominator).filter((g) => kept.has(g) !== tooFew))
+  })
+
+  function range(n: number) {
+    return Array.from({ length: n }, (_, i) => i)
   }
 
-  function toggleDenominator(value: number) {
-    const previous = settings.denominators
-    if (settings.denominators.includes(value)) {
-      if (settings.denominators.length > 1) {
-        settings.denominators = settings.denominators.filter((n) => n !== value)
-      }
-    } else settings.denominators = [...settings.denominators, value].sort((a, b) => a - b)
-    if (validProblemCount(settings) === 0) settings.denominators = previous
+  function wait(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms))
   }
 
-  async function copyLink() {
-    await navigator.clipboard.writeText(shareLink)
-    copied = true
-    window.setTimeout(() => (copied = false), 1600)
+  async function advance(delay = 0) {
+    busy = true
+    await wait(delay)
+    attempts = 0
+    hintShown = false
+    step = nextStep(step)
+    play('whoosh', { volume: 0.35 })
+    busy = false
+    if (step === 'answer') celebrate()
   }
 
-  function makeProblems(): Problem[] {
-    const pairs = settings.numbers.flatMap((total) =>
-      settings.denominators
-        .filter((denominator) => total % denominator === 0)
-        .map((denominator) => ({ total, denominator })),
+  const HINT_SECONDS = 4
+  // The hint floats over the donut for a few seconds, then slides away.
+  let hintShown = $state(false)
+  let hintTimer = 0
+
+  function miss() {
+    attempts += 1
+    play('wrong')
+    hintShown = true
+    clearTimeout(hintTimer)
+    hintTimer = setTimeout(() => (hintShown = false), HINT_SECONDS * 1000)
+    if (reduceMotion) return
+    wobble = false
+    requestAnimationFrame(() => (wobble = true))
+    setTimeout(() => (wobble = false), 520)
+  }
+
+  // ——— Question ———
+  function start() {
+    unlockAudio()
+    play('click')
+    advance()
+  }
+
+  // ——— Groups ———
+  function changeGroups(delta: number) {
+    const value = groups + delta
+    if (value < 1 || value > MAX_DENOMINATOR) return play('limit')
+    groups = value
+    if (delta > 0) stepUp(value - 1)
+    else stepDown(value - 1)
+  }
+
+  async function chop() {
+    if (groups !== problem.denominator) return miss()
+    busy = true
+    // The knife swishes down each cut line in turn…
+    chopping = true
+    play('chop')
+    await wait(220 + 70 * (groups - 1) + 60)
+    // …then the pieces thunk apart.
+    chopping = false
+    chopped = true
+    await wait(40)
+    play('thunk')
+    advance(950)
+  }
+
+  // ——— Sprinkles ———
+  function throwSprinkle() {
+    if (thrown >= MAX_WHOLE || !donut) return play('limit')
+    const { group, slot } = dealTo(thrown, problem.denominator)
+    const aim = donut.screenPoint(group, slot)
+    if (!aim) return
+    thrown += 1
+    stepUp(thrown - 1)
+    play('throw', { volume: 0.4, rate: 0.9 + Math.random() * 0.3 })
+    const id = nextId++
+    const color = COLORS[Math.floor(Math.random() * COLORS.length)]
+    const rotation = Math.round(Math.random() * 180)
+    const flight = planFlight(
+      launchPoint(innerWidth, innerHeight),
+      aim,
+      reduceMotion ? 0.4 : 0.75 + Math.random() * 0.2,
     )
-    const available = pairs.length ? pairs : [{ total: 20, denominator: 4 }]
-    const shuffled = [...available].sort(() => Math.random() - 0.5)
-    return Array.from({ length: settings.questions }, (_, index) => {
-      const pair = shuffled[index % shuffled.length]
-      const maxNumerator = Math.min(pair.denominator - 1, 3)
-      const numerator = settings.numerators === 'mixed' ? 1 + (index % maxNumerator) : 1
-      const food = settings.food === 'mix' ? (index % 2 ? 'donut' : 'apple') : settings.food
-      return { ...pair, numerator, food }
-    })
+    const deal = thrown - 1
+    launch(
+      { id, color, rotation, spin: (Math.random() - 0.5) * 900 },
+      flight,
+      () => {
+        landed = [...landed, { id, deal, group, slot, color, rotation }]
+        play('land', { volume: 0.7, rate: 0.9 + Math.random() * 0.25 })
+      },
+      deal,
+    )
   }
 
-  function startActivity() {
-    problems = makeProblems()
-    questionIndex = 0
-    stars = 0
-    activityStarted = true
-    beginQuestion()
-  }
-
-  function beginQuestion() {
-    step = settings.guided ? 'fraction' : 'slicer'
-    message = ''
-    firstTry = true
-    slicerAttached = false
-  }
-
-  function chooseFraction(numerator: number, denominator: number) {
-    if (!problem) return
-    if (numerator === problem.numerator && denominator === problem.denominator) {
-      reward('Yes — that is the fraction we are finding!')
-      window.setTimeout(() => {
-        step = 'groups'
-        message = ''
-        firstTry = true
-      }, 650)
-    } else miss('Look at the numerator and denominator in the question. Try again.')
-  }
-
-  function chooseGroups(value: number) {
-    if (!problem) return
-    if (value === problem.denominator) {
-      reward(`Exactly — the denominator tells us to make ${value} equal groups.`)
-      window.setTimeout(() => {
-        step = 'slicer'
-        message = ''
-        firstTry = true
-      }, 800)
-    } else miss(`Not quite. Which number is on the bottom of the fraction?`)
-  }
-
-  function attachSlicer() {
-    slicerAttached = true
-    message = 'Perfect fit! The whole is now ready to be shared equally.'
-    if (firstTry) stars += 1
-  }
-
-  function dropCounters() {
-    step = 'drop'
-    message = `Watch ${problem.total} counters share themselves equally.`
-    window.setTimeout(() => {
-      step = 'answer'
-      message = ''
-      firstTry = true
-    }, Math.min(3900, 1800 + problem.total * 55))
-  }
-
-  function chooseAnswer(value: number) {
-    if (value === answer) {
-      reward(`${problem.numerator === 1 ? 'One part has' : `${problem.numerator} parts have`} ${answer} counters!`)
-      window.setTimeout(nextQuestion, 950)
-    } else miss(`Count the counters in the highlighted ${problem.numerator === 1 ? 'part' : 'parts'}.`)
-  }
-
-  function nextQuestion() {
-    if (questionIndex + 1 >= problems.length) {
-      step = 'complete'
+  /** Takes back the most recent sprinkle with a poof, whether it's landed or still in the air. */
+  function unthrowSprinkle() {
+    if (thrown === 0) return play('limit')
+    thrown -= 1
+    stepDown(thrown)
+    poof()
+    // Throws land at slightly different times, so find the sprinkle by its place in
+    // the dealing order. Otherwise the next throw would land on a group that's full.
+    const deal = thrown
+    const inAir = [...flights].find(([, entry]) => entry.deal === deal)?.[0]
+    if (inAir !== undefined) {
+      const at = flying.find((f) => f.id === inAir)
+      flights.delete(inAir)
+      flying = flying.filter((f) => f.id !== inAir)
+      if (at) puff(at)
       return
     }
-    questionIndex += 1
-    beginQuestion()
+    const gone = landed.find((s) => s.deal === deal)
+    if (!gone || !donut) return
+    landed = landed.filter((s) => s !== gone)
+    const at = donut.screenPoint(gone.group, gone.slot)
+    if (at) puff(at)
   }
 
-  function reward(text: string) {
-    message = text
-    if (firstTry) stars += 1
+  function repeat(times: number, action: () => void) {
+    for (let i = 0; i < times; i += 1) setTimeout(action, i * 90)
   }
 
-  function miss(text: string) {
-    firstTry = false
-    message = text
+  function puff(at: { x: number; y: number }) {
+    const id = nextId++
+    poofs = [...poofs, { id, x: at.x, y: at.y, size: (donut?.unitScale() ?? 1) * 46 }]
+    setTimeout(() => (poofs = poofs.filter((p) => p.id !== id)), 650)
   }
 
-  function fractionOptions() {
-    if (!problem) return []
-    const values = [
-      [problem.numerator, problem.denominator],
-      [problem.numerator, Math.max(2, problem.denominator - 1)],
-      [problem.denominator, problem.numerator],
-    ]
-    return uniquePairs(values).sort(() => Math.random() - 0.5)
+  async function share_() {
+    if (thrown !== problem.whole) return miss()
+    busy = true
+    // Let the last throws land before moving on.
+    while (flights.size) await wait(60)
+    play('pop')
+    advance(500)
   }
 
-  function groupOptions() {
-    if (!problem) return []
-    return [...new Set([Math.max(2, problem.denominator - 1), problem.denominator, problem.denominator + 1])]
-      .sort((a, b) => a - b)
+  // ——— Count ———
+  function countSprinkle(id: number) {
+    if (countOrder.includes(id)) return play('limit', { volume: 0.4 })
+    countOrder = [...countOrder, id]
+    play('pop', { rate: 0.9 + countOrder.length * 0.04 })
   }
 
-  function answerOptions() {
-    return [...new Set([Math.max(1, answer - groupSize), answer, answer + groupSize])].sort((a, b) => a - b)
+  /** Keyboard counting: the next sprinkle not counted yet, going clockwise. */
+  function countNext() {
+    const next = countedSprinkles.find((s) => !countOrder.includes(s.id))
+    if (!next) return play('limit')
+    countSprinkle(next.id)
   }
 
-  function uniquePairs(values: number[][]) {
-    return values.filter((pair, index) => values.findIndex((other) => other.join('/') === pair.join('/')) === index)
+  function doneCounting() {
+    // Done! only shows once every sprinkle has a number.
+    if (!allCounted) return
+    advance(500)
   }
 
-  function wedgePath(index: number, denominator: number) {
-    const start = -90 + (index * 360) / denominator
-    const end = -90 + ((index + 1) * 360) / denominator
-    const startPoint = polar(49, start)
-    const endPoint = polar(49, end)
-    const large = 360 / denominator > 180 ? 1 : 0
-    return `M 50 50 L ${startPoint.x} ${startPoint.y} A 49 49 0 ${large} 1 ${endPoint.x} ${endPoint.y} Z`
+  // ——— Pick ———
+  function toggleGroup(group: number) {
+    const next = new Set(kept)
+    if (next.has(group)) {
+      next.delete(group)
+      stepDown(next.size)
+    } else {
+      next.add(group)
+      play('pop')
+    }
+    kept = next
   }
 
-  function polar(radius: number, degrees: number) {
-    const radians = (degrees * Math.PI) / 180
-    return { x: 50 + radius * Math.cos(radians), y: 50 + radius * Math.sin(radians) }
+  async function keep() {
+    if (kept.size !== problem.numerator) return miss()
+    busy = true
+    revealing = true
+    fallen = new Set(range(problem.denominator).filter((g) => !kept.has(g)))
+    play('fall')
+    advance(950)
   }
 
-  function counterPosition(index: number) {
-    const group = index % problem.denominator
-    const slot = Math.floor(index / problem.denominator)
-    const perGroup = problem.total / problem.denominator
-    const centerAngle = -90 + ((group + 0.5) * 360) / problem.denominator
-    const spread = Math.min(18, 110 / problem.denominator)
-    const offset = (slot - (perGroup - 1) / 2) * (spread / Math.max(1, perGroup - 1))
-    const radius = 24 + (slot % 3) * 8
-    const point = polar(radius, centerAngle + offset)
-    return { x: point.x - 50, y: point.y - 50 }
+  // ——— Answer ———
+  // The kept groups' badges fly up into a sum, "=" fades in, the total pops,
+  // then the whole donut and the summary come back underneath.
+  const BADGE_STAGGER = 350
+  const BADGE_FLIGHT = 650
+  let revealing = $state(false)
+  let showTotal = $state(false)
+  let showWhole = $state(false)
+  let confetti: Confetti | undefined = $state()
+  const keptInOrder = $derived([...kept].sort((a, b) => a - b))
+  const equalsAt = $derived(300 + keptInOrder.length * BADGE_STAGGER + BADGE_FLIGHT - 200)
+
+  async function celebrate() {
+    keptInOrder.forEach((_, i) => {
+      setTimeout(() => play('pop', { rate: 1 + i * 0.08 }), 300 + i * BADGE_STAGGER + BADGE_FLIGHT)
+    })
+    await wait(equalsAt + 350)
+    showTotal = true
+    play('success')
+    play('cheer', { volume: 0.7 })
+    confetti?.burst({ few: reduceMotion })
+    await wait(900)
+    // Bring the fallen groups back, greyed, to show all the groups again.
+    fallen = new Set()
+    showWhole = true
   }
 
-  const counterColors = ['#ffce56', '#f56f62', '#5cc9c5', '#8d77d9', '#7dbb55', '#f28ec1']
+  /** Starts a sum badge where its group's badge sat on the donut, then glides it into place. */
+  function flyFrom(node: HTMLElement, { from, delay }: { from: Point | null; delay: number }) {
+    const box = node.getBoundingClientRect()
+    const dx = from ? from.x - (box.left + box.width / 2) : 0
+    const dy = from ? from.y - (box.top + box.height / 2) : 30
+    node.animate(
+      [
+        { transform: `translate(${dx}px, ${dy}px) scale(1.25)`, opacity: from ? 1 : 0 },
+        { transform: 'none', opacity: 1 },
+      ],
+      {
+        duration: reduceMotion ? 1 : BADGE_FLIGHT,
+        delay,
+        easing: 'cubic-bezier(0.65, 0, 0.35, 1)',
+        fill: 'backwards',
+      },
+    )
+  }
+
+  function again() {
+    play('click')
+    flights.clear()
+    flying = []
+    step = 'question'
+    groups = 1
+    chopped = false
+    landed = []
+    thrown = 0
+    countOrder = []
+    kept = new Set()
+    fallen = new Set()
+    revealing = false
+    showTotal = false
+    showWhole = false
+    confetti?.clear()
+    attempts = 0
+    play('whoosh', { volume: 0.5 })
+  }
+
+  // ——— Flights ———
+  function launch(sprinkle: Omit<Flying, 'x' | 'y'>, flight: Flight, onLand?: () => void, deal?: number) {
+    flights.set(sprinkle.id, { flight, started: performance.now(), onLand, deal })
+    flying = [...flying, { ...sprinkle, x: flight.start.x, y: flight.start.y }]
+    if (!frame) frame = requestAnimationFrame(tick)
+  }
+
+  function tick(now: number) {
+    const done: number[] = []
+    flying = flying.map((f) => {
+      const entry = flights.get(f.id)
+      if (!entry) return f
+      const seconds = (now - entry.started) / 1000
+      if (seconds >= entry.flight.duration) done.push(f.id)
+      const p = positionAt(entry.flight, seconds)
+      return { ...f, x: p.x, y: p.y, rotation: f.rotation + f.spin / 60 }
+    })
+    for (const id of done) {
+      const entry = flights.get(id)
+      flights.delete(id)
+      entry?.onLand?.()
+    }
+    flying = flying.filter((f) => flights.has(f.id))
+    frame = flights.size ? requestAnimationFrame(tick) : 0
+  }
+
+  // ——— Controls ———
+  function confirm() {
+    if (busy) return
+    if (step === 'question') start()
+    else if (step === 'groups') chop()
+    else if (step === 'sprinkles') share_()
+    else if (step === 'count') doneCounting()
+    else if (step === 'pick') keep()
+    else again()
+  }
+
+  function onKey(event: KeyboardEvent) {
+    if (busy || (event.repeat && event.key === 'Enter')) return
+    const more = ['+', '=', 'ArrowRight', 'ArrowUp'].includes(event.key)
+    const less = ['-', '_', 'ArrowLeft', 'ArrowDown'].includes(event.key)
+    if (more || less) {
+      event.preventDefault()
+      if (step === 'groups') changeGroups(more ? 1 : -1)
+      else if (step === 'sprinkles') (more ? throwSprinkle : unthrowSprinkle)()
+      else if (step === 'count' && more) countNext()
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      confirm()
+    }
+  }
+
+  function toggleMute() {
+    muted = !muted
+    setMuted(muted)
+    if (!muted) play('click')
+  }
+
+  const confirmLabel = $derived(
+    { question: 'Start!', groups: 'Chop!', sprinkles: 'Confirm!', count: 'Done!', pick: 'Keep!', answer: 'Again!' }[step],
+  )
 </script>
 
-{#snippet fraction(numerator: number, denominator: number, small = false)}
-  <span class:small class="fraction" aria-label={`${numerator} over ${denominator}`}>
-    <span>{numerator}</span><span>{denominator}</span>
-  </span>
-{/snippet}
+<svelte:window onkeydown={onKey} />
 
-{#snippet logo()}
-  <span class="logo-mark" aria-hidden="true"><span></span></span>
-  <span>Fraction <strong>Fall</strong></span>
-{/snippet}
+<main class="app" class:started={step !== 'question'}>
+  <Island {problem} pinned={step !== 'question'} {highlight} gone={revealing} />
+  <Confetti bind:this={confetti} />
 
-{#if !studentMode}
-  <div class="builder-shell">
-    <header class="topbar">
-      <a class="brand" href="/" aria-label="Fraction Fall home">{@render logo()}</a>
-      <span class="teacher-badge">Teacher builder</span>
-    </header>
-
-    <main class="builder">
-      <header class="builder-heading">
-        <p class="eyebrow">Build an activity</p>
-        <h1>Make fractions make sense.</h1>
-        <p>Choose the numbers and supports your students need. Your link opens straight into their activity.</p>
-      </header>
-
-      <div class="builder-grid">
-        <section class="settings-card" aria-label="Activity settings">
-          <label class="title-field">
-            <span>Activity title</span>
-            <input maxlength="80" bind:value={settings.title} />
-          </label>
-
-          <fieldset>
-            <legend>1. Numbers to divide</legend>
-            <p class="field-help">Students will see a mix from your selected numbers.</p>
-            <div class="choice-grid numbers">
-              {#each NUMBER_CHOICES as value}
-                <button
-                  type="button"
-                  class:active={settings.numbers.includes(value)}
-                  class="choice-chip"
-                  aria-pressed={settings.numbers.includes(value)}
-                  onclick={() => toggleNumber(value)}
-                >{value}</button>
-              {/each}
-            </div>
-          </fieldset>
-
-          <fieldset>
-            <legend>2. Equal groups</legend>
-            <p class="field-help">Only combinations that divide evenly will be used.</p>
-            <div class="choice-grid denominators">
-              {#each DENOMINATOR_CHOICES as value}
-                <button
-                  type="button"
-                  class:active={settings.denominators.includes(value)}
-                  class="choice-chip"
-                  aria-pressed={settings.denominators.includes(value)}
-                  onclick={() => toggleDenominator(value)}
-                >{value}</button>
-              {/each}
-            </div>
-            <p class="combination-count">{validCount} valid number {validCount === 1 ? 'combination' : 'combinations'}</p>
-          </fieldset>
-
-          <fieldset>
-            <legend>3. Fraction type</legend>
-            <div class="segmented">
-              <button
-                type="button"
-                class:active={settings.numerators === 'unit'}
-                onclick={() => (settings.numerators = 'unit')}
-              >Unit fractions <small>1 part</small></button>
-              <button
-                type="button"
-                class:active={settings.numerators === 'mixed'}
-                onclick={() => (settings.numerators = 'mixed')}
-              >Build up <small>1–3 parts</small></button>
-            </div>
-          </fieldset>
-
-          <div class="field-row">
-            <fieldset>
-              <legend>Questions</legend>
-              <div class="compact-options">
-                {#each [3, 5, 10] as value}
-                  <button type="button" class:active={settings.questions === value} onclick={() => (settings.questions = value)}>{value}</button>
-                {/each}
-              </div>
-            </fieldset>
-            <fieldset>
-              <legend>Visual</legend>
-              <div class="compact-options">
-                {#each [['apple', 'Apple'], ['donut', 'Donut'], ['mix', 'Mix']] as option}
-                  <button type="button" class:active={settings.food === option[0]} onclick={() => (settings.food = option[0] as Food)}>{option[1]}</button>
-                {/each}
-              </div>
-            </fieldset>
-          </div>
-
-          <label class="toggle-row">
-            <span><strong>Guided steps</strong><small>Ask about the fraction and denominator before slicing.</small></span>
-            <input type="checkbox" bind:checked={settings.guided} />
-          </label>
-        </section>
-
-        <aside class="preview-column">
-          <p class="preview-label">Student preview</p>
-          <div class="preview-card">
-            <div class="preview-top"><span>Question 1 of {settings.questions}</span><span>★ ★ ☆</span></div>
-            <div class="preview-question">
-              <span>What is</span>
-              {@render fraction(settings.numerators === 'mixed' ? Math.min(2, previewProblem.denominator - 1) : 1, previewProblem.denominator)}
-              <span>of {previewProblem.total}?</span>
-            </div>
-            <div class="mini-stage">
-              <div class="mini-food" class:donut={settings.food === 'donut'}>
-                {#each Array(previewProblem.denominator) as _, index}
-                  <i style={`transform:rotate(${(index * 360) / previewProblem.denominator}deg)`}></i>
-                {/each}
-                <b></b>
-              </div>
-              <div class="mini-sprinkles"><i></i><i></i><i></i><i></i><i></i></div>
-            </div>
-            <p>Choose the slicer with <strong>{previewProblem.denominator} equal parts.</strong></p>
-          </div>
-
-          <div class="share-card">
-            <div><p>Ready to share</p><small>The settings travel inside this link—no student accounts needed.</small></div>
-            <div class="link-box"><span>{shareLink || 'Your link will appear here'}</span><button type="button" onclick={copyLink}>{copied ? 'Copied!' : 'Copy'}</button></div>
-            <a class="open-activity" href={shareLink} target="_blank" rel="noopener">Open student activity <span>↗</span></a>
-          </div>
-        </aside>
-      </div>
-    </main>
-  </div>
-{:else}
-  <div class="student-shell">
-    <header class="student-topbar">
-      <a class="brand light" href="/" aria-label="Go to the Fraction Fall teacher builder">{@render logo()}</a>
-      {#if activityStarted && step !== 'complete'}
-        <div class="question-progress" aria-label={`Question ${questionIndex + 1} of ${problems.length}`}>
-          {#each problems as _, index}<i class:done={index < questionIndex} class:current={index === questionIndex}></i>{/each}
-        </div>
-        <span class="star-count">★ {stars}</span>
-      {/if}
-    </header>
-
-    {#if !activityStarted}
-      <main class="ready-screen">
-        <div class="ready-art" aria-hidden="true">
-          <span class="fall-dot a"></span><span class="fall-dot b"></span><span class="fall-dot c"></span>
-          <div class="ready-apple"><i></i><i></i><i></i><i></i><b></b></div>
-        </div>
-        <p class="eyebrow">Your activity</p>
-        <h1>{settings.title}</h1>
-        <p>{settings.questions} visual fraction {settings.questions === 1 ? 'question' : 'questions'} · {settings.guided ? 'Guided steps' : 'Independent practice'}</p>
-        <button class="primary-button" type="button" onclick={startActivity}>Start activity <span>→</span></button>
-      </main>
-    {:else if step === 'complete'}
-      <main class="complete-screen">
-        <div class="celebration" aria-hidden="true">★</div>
-        <p class="eyebrow">Activity complete</p>
-        <h1>You shared every whole!</h1>
-        <p>You worked through {problems.length} fraction {problems.length === 1 ? 'question' : 'questions'} and collected {stars} stars.</p>
-        <div class="complete-actions">
-          <button class="primary-button" type="button" onclick={startActivity}>Play again</button>
-          <a href="/">Make an activity</a>
-        </div>
-      </main>
-    {:else if problem}
-      <main class="activity-page">
-        <section class="instruction-panel">
-          <p class="step-label">Question {questionIndex + 1} of {problems.length}</p>
-          <div class="big-question">
-            <span>What is</span>
-            {@render fraction(problem.numerator, problem.denominator)}
-            <span>of {problem.total}?</span>
-          </div>
-
-          {#if step === 'fraction'}
-            <div class="prompt-block">
-              <p class="prompt-number">Step 1</p>
-              <h2>Which fraction are we finding?</h2>
-              <div class="answer-buttons fractions">
-                {#each fractionOptions() as option}
-                  <button type="button" onclick={() => chooseFraction(option[0], option[1])}>{@render fraction(option[0], option[1], true)}</button>
-                {/each}
-              </div>
-            </div>
-          {:else if step === 'groups'}
-            <div class="prompt-block">
-              <p class="prompt-number">Step 2</p>
-              <h2>How many equal groups do we need?</h2>
-              <p class="hint">The denominator is the number on the bottom.</p>
-              <div class="answer-buttons">
-                {#each groupOptions() as option}
-                  <button type="button" onclick={() => chooseGroups(option)}>{option}</button>
-                {/each}
-              </div>
-            </div>
-          {:else if step === 'slicer'}
-            <div class="prompt-block">
-              <p class="prompt-number">{settings.guided ? 'Step 3' : 'Get ready'}</p>
-              <h2>Place the {problem.denominator}-part slicer.</h2>
-              <p class="hint">Drag it onto the {problem.food}, or tap it once.</p>
-              <button
-                type="button"
-                class="slicer-pick"
-                class:attached={slicerAttached}
-                draggable="true"
-                ondragstart={(event) => event.dataTransfer?.setData('text/plain', 'slicer')}
-                onclick={attachSlicer}
-              >
-                <span class="tiny-slicer">
-                  {#each Array(problem.denominator) as _, index}<i style={`transform:rotate(${(index * 360) / problem.denominator}deg)`}></i>{/each}
-                  <b></b>
-                </span>
-                <span>{slicerAttached ? 'Slicer placed!' : `${problem.denominator}-part slicer`}</span>
-              </button>
-              {#if slicerAttached}<button class="primary-button smaller" type="button" onclick={dropCounters}>Drop {problem.total} counters ↓</button>{/if}
-            </div>
-          {:else if step === 'drop'}
-            <div class="prompt-block watching">
-              <p class="prompt-number">Watch closely</p>
-              <h2>Each part gets the same amount.</h2>
-              <div class="equal-groups"><span>{problem.total}</span><span>÷</span><span>{problem.denominator} groups</span></div>
-            </div>
-          {:else if step === 'answer'}
-            <div class="prompt-block">
-              <p class="prompt-number">Last step</p>
-              <h2>How many counters are in the highlighted {problem.numerator === 1 ? 'part' : `${problem.numerator} parts`}?</h2>
-              <div class="answer-buttons">
-                {#each answerOptions() as option}
-                  <button type="button" onclick={() => chooseAnswer(option)}>{option}</button>
-                {/each}
-              </div>
-            </div>
-          {/if}
-
-          <p class="feedback" class:visible={message} aria-live="polite">{message || '\u00a0'}</p>
-        </section>
-
-        <section class="visual-panel" aria-label="Visual fraction model">
-          <div class="counter-source" class:open={step === 'drop'}>
-            <span></span><span></span><span></span>
-            <b>{problem.total} counters</b>
-          </div>
-          <div
-            class="food-board"
-            class:donut={problem.food === 'donut'}
-            class:ready={slicerAttached || step === 'drop' || step === 'answer'}
-            class:highlighting={step === 'answer'}
-            ondragover={(event) => event.preventDefault()}
-            ondrop={attachSlicer}
-            role="presentation"
-          >
-            <div class="food-texture"></div>
-            <svg class="wedges" viewBox="0 0 100 100" aria-hidden="true">
-              {#if step === 'answer'}
-                {#each Array(problem.numerator) as _, index}<path class="highlight-wedge" d={wedgePath(index, problem.denominator)} />{/each}
-              {/if}
-              {#if slicerAttached || step === 'drop' || step === 'answer'}
-                {#each Array(problem.denominator) as _, index}
-                  <line x1="50" y1="50" x2={polar(48, -90 + (index * 360) / problem.denominator).x} y2={polar(48, -90 + (index * 360) / problem.denominator).y} />
-                {/each}
-                <circle cx="50" cy="50" r="6" />
-              {/if}
-            </svg>
-            {#if step === 'drop' || step === 'answer'}
-              <div class="counter-layer">
-                {#each Array(problem.total) as _, index}
-                  {@const point = counterPosition(index)}
-                  <i
-                    class="counter"
-                    style={`--x:${point.x}%;--y:${point.y}%;--delay:${index * 0.055}s;--color:${counterColors[index % counterColors.length]};--drift:${((index * 37) % 90) - 45}px`}
-                  ></i>
-                {/each}
-              </div>
-            {/if}
-            {#if problem.food === 'donut'}<div class="donut-hole"></div>{/if}
-          </div>
-          <p class="visual-caption">
-            {#if step === 'answer'}
-              {@render fraction(problem.numerator, problem.denominator, true)} of {problem.total} = <strong>{answer}</strong>
-            {:else if !slicerAttached}
-              Drop the slicer here
-            {:else}
-              {problem.denominator} equal parts
-            {/if}
-          </p>
-        </section>
-      </main>
+  <button class="mute" onclick={toggleMute} aria-label={muted ? 'Turn sound on' : 'Turn sound off'}>
+    {#if muted}
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16 9l5 6M21 9l-5 6" class="line" /></svg>
+    {:else}
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" class="line" /></svg>
     {/if}
+  </button>
+
+  {#if step !== 'question'}
+    <ol class="dots" aria-label="Progress">
+      {#each STEPS.slice(1) as s, i (s)}
+        <li class:done={STEPS.indexOf(step) > i + 1} class:current={step === s}></li>
+      {/each}
+    </ol>
+
+    <section class="prompt" aria-live="polite">
+      {#key step}
+        {#if step === 'answer'}
+          <p class="sum" aria-label={`${keptInOrder.map(() => share).join(' plus ')} equals ${answerOf(problem)}`}>
+            {#each keptInOrder as group, i (group)}
+              {#if i > 0}
+                <span class="op" style={`animation-delay: ${300 + i * BADGE_STAGGER + 300}ms`}>+</span>
+              {/if}
+              <span class="badge" use:flyFrom={{ from: donut?.badgePoint(group) ?? null, delay: 300 + i * BADGE_STAGGER }}>{share}</span>
+            {/each}
+            <span class="op" style={`animation-delay: ${equalsAt}ms`}>=</span>
+            <strong class="total" class:shown={showTotal}>{answerOf(problem)}</strong>
+          </p>
+        {:else}
+          <h2 in:fly={{ y: 24, duration: 400, delay: 150 }}>{prompt}</h2>
+        {/if}
+      {/key}
+    </section>
+
+    <section class="stage" class:answering={step === 'answer'} in:scale={{ start: 0.6, duration: 500, delay: 200 }}>
+      <div class="donut-box" class:waiting={step === 'answer' && !showWhole}>
+        <Donut
+          bind:this={donut}
+          groups={chopped ? problem.denominator : groups}
+          {chopped}
+          {chopping}
+          sprinkles={landed}
+          {glazed}
+          dimmed={step === 'answer' ? new Set(range(problem.denominator).filter((g) => !glazed.has(g))) : dimmed}
+          {fallen}
+          counts={step === 'count' ? counts : new Map()}
+          {groupBadges}
+          {wobble}
+          {pulseGroups}
+          {greyed}
+          greyArt={step === 'count'}
+          focus={step === 'count' ? COUNTED_GROUP : null}
+          onSprinkleTap={step === 'count' ? countSprinkle : undefined}
+          onGroupTap={step === 'pick' && !busy ? toggleGroup : undefined}
+        />
+      </div>
+      {#if step === 'pick' && pickedMath}
+        <!-- Floats under the donut so it never pushes the layout around. -->
+        {#key pickedMath}
+          <p class="math-bubble" in:scale={{ start: 0.85, duration: 200 }}>{pickedMath}</p>
+        {/key}
+      {/if}
+      {#if step === 'answer'}
+        <!-- Space is kept from the start so nothing shifts when it fades in. -->
+        <div class="summary" class:shown={showWhole}>
+          <p class="equation">
+            <span class="fraction" aria-hidden="true"><span>{problem.numerator}</span><span>{problem.denominator}</span></span>
+            of {problem.whole} = <strong>{answerOf(problem)}</strong>
+          </p>
+          <p>{fractionWords(problem)} of {problem.whole} = {answerOf(problem)}</p>
+          <p>
+            {problem.numerator} {problem.numerator === 1 ? 'group' : 'groups'} of {share} → {problem.numerator} × {share} = {answerOf(problem)}
+          </p>
+          <p class="soft">{problem.denominator} groups of {share} = {problem.whole}</p>
+        </div>
+      {/if}
+    </section>
+  {/if}
+
+  <footer class="control">
+    <!-- Floats above the controls, over the donut, so showing it never moves anything. -->
+    <div class="hint-spot" aria-live="polite">
+      {#if hint && hintShown}
+        {#key attempts}
+          <p class="hint" in:fly={{ y: 16, duration: 280 }} out:fly={{ y: 16, duration: 320 }}>{hint.text}</p>
+        {/key}
+      {/if}
+    </div>
+    {#if instruction}
+      <p class="instruction">{instruction}</p>
+    {/if}
+    {#if step === 'groups'}
+      <Stepper value={groups} label={groups === 1 ? 'group' : 'groups'} onMinus={() => changeGroups(-1)} onPlus={() => changeGroups(1)} {pulse} />
+    {:else if step === 'sprinkles'}
+      <Stepper
+        value={thrown}
+        label={thrown === 1 ? 'sprinkle' : 'sprinkles'}
+        onMinusFive={() => repeat(5, unthrowSprinkle)}
+        onMinus={unthrowSprinkle}
+        onPlus={throwSprinkle}
+        onPlusFive={() => repeat(5, throwSprinkle)}
+        {pulse}
+      />
+    {:else if step === 'count'}
+      <div class="picked" aria-live="polite">
+        {#key countOrder.length}<span class="number">{countOrder.length}</span>{/key}
+        <span class="label">counted</span>
+      </div>
+    {:else if step === 'pick'}
+      <div class="picked" aria-live="polite">
+        {#key kept.size}<span class="number">{kept.size}</span>{/key}
+        <span class="label">{fractionName(problem.denominator, kept.size)}</span>
+      </div>
+    {/if}
+    <!-- Done! keeps its space while hidden, so the donut doesn't jump when it appears. -->
+    <button
+      class="go"
+      class:big={step === 'question'}
+      class:waiting={step === 'count' && !allCounted}
+      onclick={confirm}
+      disabled={busy || (step === 'count' && !allCounted)}
+      aria-hidden={step === 'count' && !allCounted}>{confirmLabel}</button
+    >
+  </footer>
+
+  <div class="flying" aria-hidden="true">
+    {#each poofs as p (p.id)}
+      <span class="poof" style={`transform: translate(${p.x}px, ${p.y}px); --size: ${p.size}px`}>
+        {#each Array.from({ length: 6 }) as _, i (i)}
+          <span class="puff" style={`--angle: ${i * 60 + 15}deg`}></span>
+        {/each}
+      </span>
+    {/each}
+    {#each flying as f (f.id)}
+      <span
+        class="sprinkle"
+        style={`transform: translate(${f.x}px, ${f.y}px) rotate(${f.rotation}deg) scale(${donut?.unitScale() ?? 1}); background: ${f.color}`}
+      ></span>
+    {/each}
   </div>
-{/if}
+</main>
+
+<style>
+  .app {
+    height: 100dvh;
+    display: grid;
+    grid-template-rows: 104px auto minmax(0, 1fr) auto;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .mute {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    z-index: 6;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: none;
+    background: #fff;
+    box-shadow: 0 4px 16px #2b2b3a1f;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+  }
+
+  .mute svg {
+    width: 26px;
+    height: 26px;
+    fill: var(--ink);
+  }
+
+  .mute .line {
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 2.2;
+    stroke-linecap: round;
+  }
+
+  .dots {
+    grid-row: 1;
+    align-self: end;
+    justify-self: center;
+    display: flex;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .dots li {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #2b2b3a26;
+    transition: background-color 0.3s, transform 0.3s;
+  }
+
+  .dots .done {
+    background: var(--accent);
+  }
+
+  .dots .current {
+    background: var(--ink);
+    transform: scale(1.3);
+  }
+
+  .prompt {
+    grid-row: 2;
+    text-align: center;
+    padding: 18px 16px 0;
+    display: grid;
+    justify-items: center;
+    gap: 10px;
+  }
+
+  .prompt h2 {
+    margin: 0;
+    font: 700 clamp(24px, 3.4vw, 40px) / 1.2 var(--font);
+  }
+
+  .hint-spot {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + 4px);
+    display: grid;
+    justify-items: center;
+    padding: 0 16px;
+    pointer-events: none;
+  }
+
+  /* Stack the old and new hint in one spot while they cross-fade. */
+  .hint-spot > * {
+    grid-area: 1 / 1;
+  }
+
+  .hint {
+    margin: 0;
+    box-shadow: 0 6px 20px #2b2b3a26;
+    text-align: center;
+    padding: 8px 18px;
+    border-radius: 999px;
+    background: #ffd23f;
+    font: 600 clamp(17px, 2vw, 22px) / 1.3 var(--font);
+  }
+
+  /* The answer headline: the kept groups' badges, added up. */
+  .sum {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.3em;
+    font: 700 clamp(36px, 5.5vw, 64px) / 1 var(--font);
+  }
+
+  /* Above the stage, so badges fly over the donut, not behind it. */
+  .sum {
+    position: relative;
+    z-index: 5;
+  }
+
+  .sum .op {
+    animation: op-in 0.3s ease-out backwards;
+  }
+
+  @keyframes op-in {
+    from {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+  }
+
+  .sum .badge {
+    display: grid;
+    place-items: center;
+    width: 1.5em;
+    height: 1.5em;
+    border-radius: 50%;
+    background: #fff;
+    border: 0.07em solid var(--ink);
+    font-size: 0.75em;
+  }
+
+  .sum .total {
+    color: var(--accent);
+    opacity: 0;
+    transform: scale(0.3);
+    transition:
+      opacity 0.2s,
+      transform 0.45s cubic-bezier(0.34, 1.8, 0.64, 1);
+  }
+
+  .sum .total.shown {
+    opacity: 1;
+    transform: none;
+  }
+
+  .summary {
+    display: grid;
+    justify-items: center;
+    gap: 2px;
+    padding: 12px 28px 14px;
+    border-radius: 24px;
+    background: #fff;
+    box-shadow: 0 6px 24px #2b2b3a1a;
+    font: 600 clamp(16px, 1.9vw, 21px) / 1.35 var(--font);
+    opacity: 0;
+    transform: translateY(12px);
+    transition:
+      opacity 0.45s,
+      transform 0.45s;
+  }
+
+  .summary.shown {
+    opacity: 1;
+    transform: none;
+  }
+
+  .summary p {
+    margin: 0;
+  }
+
+  .summary .equation {
+    font-size: 1.6em;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25em;
+  }
+
+  .math-bubble {
+    position: absolute;
+    left: 50%;
+    bottom: 6px;
+    translate: -50% 0;
+    margin: 0;
+    padding: 8px 22px;
+    border-radius: 999px;
+    background: #fff;
+    box-shadow: 0 6px 20px #2b2b3a26;
+    font: 700 clamp(20px, 2.4vw, 28px) / 1.2 var(--font);
+    color: var(--accent);
+    white-space: nowrap;
+  }
+
+  .equation strong {
+    color: var(--accent);
+  }
+
+  .fraction {
+    display: inline-grid;
+    font-size: 0.62em;
+    line-height: 1;
+    text-align: center;
+  }
+
+  .fraction span:first-child {
+    border-bottom: 0.09em solid currentColor;
+    padding: 0 0.15em 0.05em;
+  }
+
+  .soft {
+    color: var(--ink-soft);
+    font-weight: 600;
+  }
+
+  .stage {
+    position: relative;
+    grid-row: 3;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    padding: 12px;
+  }
+
+  /* Donut above, summary below. */
+  .stage.answering {
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 12px;
+  }
+
+  .donut-box.waiting {
+    opacity: 0.55;
+    transition: opacity 0.5s;
+  }
+
+  .donut-box {
+    transition: opacity 0.5s;
+    height: 100%;
+    aspect-ratio: 1;
+    max-width: 92vw;
+    max-height: 100%;
+  }
+
+  .control {
+    position: relative;
+    grid-row: 4;
+    display: grid;
+    justify-items: center;
+    gap: 14px;
+    padding: 8px 16px 28px;
+    z-index: 4;
+  }
+
+  .go {
+    min-width: 200px;
+    padding: 14px 36px;
+    border: none;
+    border-radius: 999px;
+    background: var(--go);
+    color: #fff;
+    font: 700 30px/1 var(--font);
+    box-shadow: 0 6px 0 #00000033;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition:
+      transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
+      opacity 0.2s;
+  }
+
+  .go:active {
+    transform: translateY(4px);
+    box-shadow: 0 2px 0 #00000033;
+  }
+
+  .go:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  .go.waiting {
+    visibility: hidden;
+    transform: scale(0.6);
+  }
+
+  .go.big {
+    font-size: 40px;
+    padding: 20px 56px;
+  }
+
+  @media (hover: hover) {
+    .go.big:hover {
+      animation: breathe 1.4s ease-in-out infinite;
+    }
+  }
+
+  @keyframes breathe {
+    50% { transform: scale(1.06); }
+  }
+
+  .picked {
+    display: grid;
+    justify-items: center;
+    line-height: 1;
+    min-height: 76px;
+    align-content: center;
+  }
+
+  .picked .number {
+    font: 700 56px/1 var(--font);
+  }
+
+  .picked .label {
+    font: 600 18px/1.2 var(--font);
+    color: var(--ink-soft);
+  }
+
+  .instruction {
+    margin: 0;
+    font: 600 clamp(16px, 1.8vw, 20px) / 1.3 var(--font);
+    color: var(--ink-soft);
+  }
+
+  .poof {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+  }
+
+  /* Six little clouds that burst outward and fade. */
+  .puff {
+    position: absolute;
+    left: calc(var(--size) * -0.22);
+    top: calc(var(--size) * -0.22);
+    width: calc(var(--size) * 0.44);
+    height: calc(var(--size) * 0.44);
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 0 2px #2b2b3a14;
+    animation: puff 0.6s ease-out forwards;
+  }
+
+  @keyframes puff {
+    from {
+      transform: rotate(var(--angle)) translateX(0) scale(0.4);
+      opacity: 1;
+    }
+    to {
+      transform: rotate(var(--angle)) translateX(calc(var(--size) * 0.6)) scale(1.1);
+      opacity: 0;
+    }
+  }
+
+  .flying {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 3;
+  }
+
+  .flying .sprinkle {
+    position: absolute;
+    left: -13px;
+    top: -4.5px;
+    width: 26px;
+    height: 9px;
+    border-radius: 4.5px;
+    box-shadow: 1px 2.5px 0 #2b2b3a2e;
+  }
+
+  .app:not(.started) {
+    grid-template-rows: 1fr auto;
+  }
+
+  .app:not(.started) .control {
+    grid-row: 2;
+    padding-bottom: 8vh;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .go.waiting {
+    visibility: hidden;
+    transform: scale(0.6);
+  }
+
+  .go.big { animation: none; }
+  }
+</style>

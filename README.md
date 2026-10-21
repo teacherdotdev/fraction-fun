@@ -1,27 +1,40 @@
-# Fraction Fall
+# Fraction Fun
 
-A visual Svelte 5 activity for understanding fractions of whole numbers. Teachers choose the numbers, denominators, fraction level, number of questions, visual, and amount of scaffolding. Every choice is encoded in a shareable student link, so there are no accounts or backend to manage.
+fractionfun.org
 
-## Student experience
+Find a fraction of a whole number by cutting a donut into equal groups and sharing sprinkles onto it. Built for Ms. Danna's students at Hampstead School. See `GLOSSARY.md` for the words we use and `docs/adr/` for the decisions behind them.
 
-1. Identify the fraction.
-2. Connect the denominator to the number of equal groups.
-3. Drag or tap the matching slicer onto an apple or donut.
-4. Watch counters fall and distribute equally.
-5. Read the highlighted part and answer the question.
+## Setting a problem
+
+One link is one problem: `?n=1&d=4&of=20` asks "What is one fourth of 20?" That's also the default.
+
+- `d` (groups) is 2–8
+- `n` is 1 to `d − 1`
+- `of` is a multiple of `d`, up to 48
+
+Anything invalid falls back to the default.
+
+## Student steps
+
+1. **Question**: the problem fills the screen. **Start!**
+2. **Groups**: −/+ previews the cut lines. **Chop!**
+3. **Sprinkles**: each + throws a sprinkle onto the next group in turn. **Share!**
+4. **Count**: the view zooms into one group and the student taps each sprinkle to count it. **Done!**
+5. **Pick**: tap the groups you need, starting from none. **Keep!**
+6. **Answer**: the equation, plus "2 groups of 5 → 2 × 5 = 10". **Again!**
+
+A wrong confirm makes the donut wobble and shows a hint. The hints get more direct each try.
 
 ## Development
 
 ```bash
 npm install
 npm run dev
-```
-
-Validate and build the production site:
-
-```bash
+npm test        # logic: problem links, dealing, steps, hints, throws
 npm run check
 npm run build
 ```
 
-Cloudflare Web Analytics is enabled in production when `VITE_CF_BEACON` is set.
+Sound effects are all CC0, mostly from Kenney (see `public/sounds/CREDITS.md`). The −/+ notes are synthesised in the browser.
+
+Cloudflare Web Analytics loads in production builds, using the fractionfun.org token in `src/main.ts` (or `VITE_CF_BEACON` if set).
