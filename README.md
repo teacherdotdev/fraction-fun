@@ -38,3 +38,7 @@ npm run build
 Sound effects are all CC0, mostly from Kenney (see `public/sounds/CREDITS.md`). The −/+ notes are synthesised in the browser.
 
 Cloudflare Web Analytics loads in production builds, using the fractionfun.org token in `src/main.ts` (or `VITE_CF_BEACON` if set).
+
+## License
+
+Apache License 2.0. See `LICENSE`. Sound effects keep their own CC0 licences (`public/sounds/CREDITS.md`).
