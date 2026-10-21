@@ -7,10 +7,23 @@ export type Problem = {
 export const DEFAULT_PROBLEM: Problem = { numerator: 1, denominator: 4, whole: 20 }
 
 export const MIN_DENOMINATOR = 2
-export const MAX_DENOMINATOR = 8
+export const MAX_DENOMINATOR = 12
 export const MAX_WHOLE = 48
 
-const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight']
+const NUMBER_WORDS = [
+  'zero',
+  'one',
+  'two',
+  'three',
+  'four',
+  'five',
+  'six',
+  'seven',
+  'eight',
+  'nine',
+  'ten',
+  'eleven',
+]
 
 const FRACTION_NAMES: Record<number, [singular: string, plural: string]> = {
   2: ['half', 'halves'],
@@ -20,6 +33,10 @@ const FRACTION_NAMES: Record<number, [singular: string, plural: string]> = {
   6: ['sixth', 'sixths'],
   7: ['seventh', 'sevenths'],
   8: ['eighth', 'eighths'],
+  9: ['ninth', 'ninths'],
+  10: ['tenth', 'tenths'],
+  11: ['eleventh', 'elevenths'],
+  12: ['twelfth', 'twelfths'],
 }
 
 /** Reads `?n=1&d=4&of=20`. Any invalid value falls back to the whole default problem. */

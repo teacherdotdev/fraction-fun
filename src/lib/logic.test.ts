@@ -11,6 +11,11 @@ describe('problemFromParams', () => {
     expect(problemFromParams(params(''))).toEqual(DEFAULT_PROBLEM)
   })
 
+  it('reads elevenths and twelfths', () => {
+    expect(problemFromParams(params('n=3&d=11&of=33'))).toEqual({ numerator: 3, denominator: 11, whole: 33 })
+    expect(problemFromParams(params('n=5&d=12&of=36'))).toEqual({ numerator: 5, denominator: 12, whole: 36 })
+  })
+
   it('reads a valid problem', () => {
     expect(problemFromParams(params('n=2&d=6&of=24'))).toEqual({
       numerator: 2,
@@ -21,7 +26,8 @@ describe('problemFromParams', () => {
 
   it.each([
     'n=1&d=4&of=21', // not shared equally
-    'n=1&d=9&of=36', // too many groups
+    'n=1&d=13&of=39', // too many groups
+    'n=3&d=11', // 20 doesn't share into elevenths
     'n=1&d=1&of=5',
     'n=4&d=4&of=20', // not a proper fraction
     'n=0&d=4&of=20',
@@ -38,6 +44,7 @@ describe('words and answers', () => {
     expect(fractionWords({ numerator: 1, denominator: 4, whole: 20 })).toBe('one fourth')
     expect(fractionWords({ numerator: 3, denominator: 8, whole: 48 })).toBe('three eighths')
     expect(fractionWords({ numerator: 1, denominator: 2, whole: 8 })).toBe('one half')
+    expect(fractionWords({ numerator: 5, denominator: 12, whole: 36 })).toBe('five twelfths')
   })
 
   it('finds the share and the answer', () => {
@@ -88,7 +95,7 @@ describe('dealing', () => {
   })
 
   it('places sprinkles far enough apart to tell apart', () => {
-    for (const groups of [2, 3, 4, 6, 8]) {
+    for (const groups of [2, 3, 4, 6, 8, 10, 12]) {
       const slots = sprinkleSlots(0, groups, Math.ceil(48 / groups))
       const closest = Math.min(
         ...slots.flatMap((a, i) => slots.slice(i + 1).map((b) => Math.hypot(a.x - b.x, a.y - b.y))),

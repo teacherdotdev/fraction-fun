@@ -7,7 +7,7 @@ export const HOLE_RADIUS = 56
 /** Sprinkles stay on the frosting, between these radii. */
 const SPRINKLE_INNER = 92
 const SPRINKLE_OUTER = 138
-/** How far each group moves out from the centre once chopped. */
+/** How far each group sits out from the centre once chopped. */
 export const CHOP_GAP = 12
 
 export type Point = { x: number; y: number }
@@ -35,11 +35,20 @@ export function wedgePath(index: number, groups: number): string {
   return `M${CENTER} ${CENTER}L${a.x} ${a.y}A${r} ${r} 0 ${large} 1 ${b.x} ${b.y}Z`
 }
 
-/** Direction a chopped group drifts: out along the middle of its wedge. */
-export function chopOffset(index: number, groups: number, distance = CHOP_GAP): Point {
-  if (groups === 1) return { x: 0, y: 0 }
+/**
+ * Where a chopped group sits: out along the middle of its wedge. Right after the
+ * chop (`burst`), each piece is thrown further, by a different amount, and tilted,
+ * so it looks cut apart; then it snaps back into the neat ring.
+ */
+export function chopOffset(index: number, groups: number, burst = false): Point & { tilt: number } {
+  if (groups === 1) return { x: 0, y: 0, tilt: 0 }
   const middle = angleOf(index + 0.5, groups)
-  return { x: Math.cos(middle) * distance, y: Math.sin(middle) * distance }
+  const distance = burst ? CHOP_GAP + 6 + ((index * 7) % 3) * 3 : CHOP_GAP
+  return {
+    x: Math.cos(middle) * distance,
+    y: Math.sin(middle) * distance,
+    tilt: burst ? (((index * 5) % 5) - 2) * 1.5 : 0,
+  }
 }
 
 /** How to zoom so one group fills the view: the point to centre on and the scale. */

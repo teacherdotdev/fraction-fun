@@ -12,7 +12,7 @@ export type Effect =
   | 'fall'
   | 'success'
   | 'click'
-  | 'thunk'
+  | 'intro'
   | 'cheer'
 
 const EFFECTS: Effect[] = [
@@ -26,7 +26,7 @@ const EFFECTS: Effect[] = [
   'fall',
   'success',
   'click',
-  'thunk',
+  'intro',
   'cheer',
 ]
 const MUTE_KEY = 'fraction-fun:muted'
@@ -61,6 +61,14 @@ async function loadAll(ctx: AudioContext) {
       }
     }),
   )
+}
+
+/**
+ * Start fetching every clip as the page opens. The context stays suspended until
+ * the first tap, but the clips are decoded and ready, so the very first sound plays.
+ */
+export function preloadSounds() {
+  audio()
 }
 
 /** Call from the first tap so browsers allow audio. */
@@ -102,6 +110,44 @@ function noteFor(level: number): number {
   return 392 * 2 ** (semitones / 12)
 }
 
+/**
+ * A muted cutting-board thud for the chop: a low tone that drops fast, under a
+ * short, dull knock of filtered noise.
+ */
+export function chopThud() {
+  if (muted) return
+  const ctx = audio()
+  if (!ctx) return
+  const now = ctx.currentTime
+
+  const body = ctx.createOscillator()
+  body.type = 'sine'
+  body.frequency.setValueAtTime(170, now)
+  body.frequency.exponentialRampToValueAtTime(55, now + 0.12)
+  const bodyGain = ctx.createGain()
+  bodyGain.gain.setValueAtTime(0.0001, now)
+  bodyGain.gain.exponentialRampToValueAtTime(0.55, now + 0.006)
+  bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22)
+  body.connect(bodyGain).connect(ctx.destination)
+  body.start(now)
+  body.stop(now + 0.25)
+
+  const length = Math.floor(ctx.sampleRate * 0.05)
+  const noise = ctx.createBuffer(1, length, ctx.sampleRate)
+  const data = noise.getChannelData(0)
+  for (let i = 0; i < length; i += 1) data[i] = (Math.random() * 2 - 1) * (1 - i / length)
+  const knock = ctx.createBufferSource()
+  knock.buffer = noise
+  const filter = ctx.createBiquadFilter()
+  filter.type = 'bandpass'
+  filter.frequency.value = 700
+  filter.Q.value = 1.2
+  const knockGain = ctx.createGain()
+  knockGain.gain.value = 0.25
+  knock.connect(filter).connect(knockGain).connect(ctx.destination)
+  knock.start(now)
+}
+
 /** A soft puff of filtered noise, for a sprinkle vanishing. */
 export function poof() {
   if (muted) return
@@ -125,6 +171,38 @@ export function poof() {
   source.connect(filter).connect(gain).connect(ctx.destination)
   source.start(now)
   source.stop(now + 0.3)
+}
+
+/**
+ * A swoosh lasting `seconds`, for something swinging through the air: breathy
+ * noise whose pitch sweeps up then down, loudest mid-swing when it moves fastest.
+ */
+export function swoosh(seconds: number, pitch = 1) {
+  if (muted) return
+  const ctx = audio()
+  if (!ctx) return
+  const now = ctx.currentTime
+  const end = now + seconds
+  const peak = now + seconds * 0.55
+  const length = Math.floor(ctx.sampleRate * seconds)
+  const noise = ctx.createBuffer(1, length, ctx.sampleRate)
+  const data = noise.getChannelData(0)
+  for (let i = 0; i < length; i += 1) data[i] = Math.random() * 2 - 1
+  const source = ctx.createBufferSource()
+  source.buffer = noise
+  const filter = ctx.createBiquadFilter()
+  filter.type = 'bandpass'
+  filter.Q.value = 1.6
+  filter.frequency.setValueAtTime(500 * pitch, now)
+  filter.frequency.exponentialRampToValueAtTime(1800 * pitch, peak)
+  filter.frequency.exponentialRampToValueAtTime(700 * pitch, end)
+  const gain = ctx.createGain()
+  gain.gain.setValueAtTime(0.0001, now)
+  gain.gain.exponentialRampToValueAtTime(0.5, peak)
+  gain.gain.exponentialRampToValueAtTime(0.0001, end)
+  source.connect(filter).connect(gain).connect(ctx.destination)
+  source.start(now)
+  source.stop(end)
 }
 
 function blip(first: number, second: number) {

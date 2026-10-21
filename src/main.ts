@@ -1,6 +1,7 @@
 import { mount } from 'svelte'
 import './app.css'
 import App from './App.svelte'
+import { preloadSounds } from './lib/sound'
 
 // Cloudflare Web Analytics, production builds only. The token is public (it ships in
 // every page), so the fractionfun.org one lives here unless a build overrides it.
@@ -15,6 +16,8 @@ if (beaconToken) {
   script.dataset.cfBeacon = JSON.stringify({ token: beaconToken })
   document.head.appendChild(script)
 }
+
+preloadSounds()
 
 const app = mount(App, {
   target: document.getElementById('app')!,

@@ -16,5 +16,5 @@ Converted to mono 128 kbps MP3 with leading/trailing silence trimmed.
 | fall.mp3 | Interface Sounds | minimize_005.ogg | CC0 1.0, Kenney (kenney.nl) |
 | success.mp3 | OpenGameArt, "Classic fanfare lick" by fvcalderan | fanfare.ogg (served as fanfare_3.ogg; normalised to -1 dB) | CC0 1.0, https://opengameart.org/content/classic-fanfare-lick |
 | click.mp3 | UI Audio | click2.ogg | CC0 1.0, Kenney (kenney.nl) |
-| thunk.mp3 | Impact Sounds | impactSoft_medium_001.ogg | CC0 1.0, Kenney (kenney.nl) |
-| cheer.mp3 | Freesound, "G29-61-Children Cheering.wav" by craigsmith (pack: Vintage Crowds) | Freesound HQ preview 438421_2524442-hq.mp3, 0.45–2.05 s excerpt, 9 kHz low-pass, 0.3 s fade-out, normalised to -3 dB | CC0 1.0, https://freesound.org/people/craigsmith/sounds/438421/ |
+| cheer.mp3 | Freesound, "yay.mp3" by Disarmenemyships | Freesound HQ preview 563845_11121005-hq.mp3, 0.03–2.03 s, downmixed to mono, 0.25 s fade-out, normalised to -3 dB | CC0 1.0, https://freesound.org/people/Disarmenemyships/sounds/563845/ |
+| intro.mp3 | Layered: Freesound, "Swishes_9_hill_curve_stronger.wav" by videofueralle + Kenney Interface Sounds | 614169_1130120-hq.mp3 (0.30–1.05 s, 150 Hz high-pass, 8 kHz low-pass, de-clicked) mixed with confirmation_004.ogg (first 0.41 s, light echo, 3.5 kHz low-pass, delayed 0.1 s, about 3 dB under the whoosh); normalised to -3 dB | CC0 1.0, https://freesound.org/people/videofueralle/sounds/614169/ and Kenney (kenney.nl) |

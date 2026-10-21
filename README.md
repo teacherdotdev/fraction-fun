@@ -8,7 +8,7 @@ Find a fraction of a whole number by cutting a donut into equal groups and shari
 
 One link is one problem: `?n=1&d=4&of=20` asks "What is one fourth of 20?" That's also the default.
 
-- `d` (groups) is 2–8
+- `d` (groups) is 2–12
 - `n` is 1 to `d − 1`
 - `of` is a multiple of `d`, up to 48
 

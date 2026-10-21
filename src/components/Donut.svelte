@@ -39,6 +39,10 @@
     groupBadges?: Map<number, number>
     wobble?: boolean
     pulseGroups?: Set<number>
+    /** Groups that have flown off to the answer, hidden until the donut comes back. */
+    launched?: Set<number>
+    /** Fades every group back in place at once, for the final picture. */
+    reappear?: boolean
     /** Zoom in so this group fills the view. */
     focus?: number | null
     /** Groups drawn in greyscale, sprinkles and all, so colour marks what matters. */
@@ -62,6 +66,8 @@
     wobble = false,
     pulseGroups = new Set(),
     focus = null,
+    launched = new Set(),
+    reappear = false,
     greyed = new Set(),
     greyArt = false,
     onSprinkleTap,
@@ -69,25 +75,34 @@
   }: Props = $props()
 
   const FROSTING = '#f28ab0'
-  const GLAZE = '#ff4f98'
+  // Kept groups keep the normal frosting (picked vs not is shown by greying the
+  // rest); a hot-pink glaze made the red sprinkles hard to see.
+  const GLAZE = FROSTING
   const RING = (r: number) =>
     `M${CENTER - r} ${CENTER}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0Z`
 
   let svg: SVGSVGElement
   const groupEls: SVGGElement[] = $state([])
-  // Groups drift apart one frame after the chop so the move animates.
+  // Groups burst apart one frame after the chop so the move animates, then snap
+  // back into a neat ring.
   let spread = $state(false)
+  let snapped = $state(false)
 
   $effect(() => {
     if (!chopped) {
       spread = false
+      snapped = false
       return
     }
     // Two frames: one for the pieces to paint in place, one to start the move.
     let frame = requestAnimationFrame(() => {
       frame = requestAnimationFrame(() => (spread = true))
     })
-    return () => cancelAnimationFrame(frame)
+    const snap = setTimeout(() => (snapped = true), 700)
+    return () => {
+      cancelAnimationFrame(frame)
+      clearTimeout(snap)
+    }
   })
 
   const slots = $derived(
@@ -111,6 +126,59 @@
     return { x: p.x, y: p.y }
   }
 
+  /**
+   * Flies a group to `target`: it swings out to the right, then curves back in,
+   * fading away until only its number badge is left, grown to `size` px across.
+   */
+  export function launchGroup(i: number, target: Point, size: number, duration = 1000): Promise<void> {
+    const el = groupEls[i]
+    const from = badgePoint(i)
+    if (!el || !from) return Promise.resolve()
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
+    const fade = reduce ? 1 : 350
+    if (reduce) duration = 1
+    const k = unitScale()
+    const offset = chopOffset(i, groups)
+    const dx = (target.x - from.x) / k
+    const dy = (target.y - from.y) / k
+    // A quadratic curve whose control point sits well out to the right.
+    const control = { x: Math.max(dx, 0) + 330 / k, y: dy * 0.35 }
+    const frames: Keyframe[] = []
+    for (let n = 0; n <= 24; n += 1) {
+      const t = n / 24
+      const x = 2 * (1 - t) * t * control.x + t * t * dx
+      const y = 2 * (1 - t) * t * control.y + t * t * dy
+      const tilt = offset.tilt * (1 - t) + Math.sin(t * Math.PI) * 18
+      frames.push({ transform: `translate(${offset.x + x}px, ${offset.y + y}px) rotate(${tilt}deg)` })
+    }
+    // First the piece fades away in place, leaving just its number…
+    el.querySelector('.body')?.animate([{ opacity: 1 }, { opacity: 0 }], {
+      duration: fade,
+      easing: 'ease-out',
+      fill: 'forwards',
+    })
+    // …then the number swings out to the right and lands on the answer.
+    const flight = el.animate(frames, {
+      duration,
+      delay: fade,
+      easing: 'cubic-bezier(0.45, 0, 0.25, 1)',
+      fill: 'forwards',
+    })
+    el.querySelector('.badge.big .pop')?.animate(
+      [{ transform: 'scale(1)' }, { transform: `scale(${size / (badgeRadius * 2 * k)})` }],
+      { duration, delay: fade, easing: 'ease-in-out', fill: 'forwards' },
+    )
+    return flight.finished.then(() => undefined)
+  }
+
+  /** Group badges shrink on thin pieces (11ths, 12ths) so neighbours don't overlap. */
+  const badgeRadius = $derived(Math.min(28, 115 * Math.sin(Math.PI / groups) * 0.8))
+
+  /** Drops every launch animation, so groups sit back where they belong. */
+  export function settle() {
+    for (const el of groupEls) el?.getAnimations({ subtree: true }).forEach((a) => a.cancel())
+  }
+
   /** Where a group's big number badge sits on screen. */
   export function badgePoint(group: number): Point | null {
     const matrix = (groupEls[group] ?? svg)?.getScreenCTM()
@@ -122,13 +190,36 @@
 
   /** Screen size of one donut unit, so flying sprinkles match landed ones. */
   export function unitScale(): number {
-    return svg ? svg.getBoundingClientRect().width / 400 : 1
+    // The viewBox is 440 units across (the donut plus a 20-unit margin each side).
+    return svg ? svg.getBoundingClientRect().width / 440 : 1
   }
 
   export function centre(): Point {
     const box = svg.getBoundingClientRect()
     return { x: box.left + box.width / 2, y: box.top + box.height / 2 }
   }
+
+  // A feathered edge hides whatever the zoom pushes past the donut's box. It
+  // follows the camera's live scale, so it fades in as the zoom pushes things
+  // out of view and fades away as the zoom out brings them back.
+  let cameraEl: SVGGElement
+  let feather = $state(0)
+  $effect(() => {
+    const zooming = focus !== null && chopped
+    let frame = 0
+    const until = performance.now() + 900
+    const tick = (now: number) => {
+      const matrix = getComputedStyle(cameraEl).transform
+      const scale = matrix === 'none' ? 1 : new DOMMatrix(matrix).a
+      feather = Math.min(1, Math.max(0, (scale - 1) / 0.3))
+      if (now < until || zooming) frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  })
+  // In viewBox units: solid inside the inner radius, gone by the outer one.
+  const maskInner = $derived(214 - 47 * feather)
+  const maskOuter = $derived(240 - 20 * feather)
 
   const camera = $derived.by(() => {
     if (focus === null || !chopped) return 'transform: none'
@@ -141,8 +232,9 @@
       const t = tumbles[i]
       return `transform: translate(${t.x}px, 700px) rotate(${t.spin}deg); opacity: 0;`
     }
-    const offset = spread ? chopOffset(i, groups) : { x: 0, y: 0 }
-    return `transform: translate(${offset.x}px, ${offset.y}px);`
+    const offset = spread ? chopOffset(i, groups, !snapped) : { x: 0, y: 0, tilt: 0 }
+    const pivot = groupCentre(i, groups)
+    return `transform: translate(${offset.x}px, ${offset.y}px) rotate(${offset.tilt}deg); transform-origin: ${pivot.x}px ${pivot.y}px;`
   }
 </script>
 
@@ -185,7 +277,7 @@
       }
     }}
   >
-    {#if tap}<circle r="15" fill="transparent" />{/if}
+    {#if tap}<circle r="21" fill="transparent" />{/if}
     <g class="land">
       <rect x="-13" y="-4.5" width="26" height="9" rx="4.5" fill="#2b2b3a" opacity="0.18" transform={`translate(1 2.5) rotate(${s.rotation})`} />
       <rect x="-13" y="-4.5" width="26" height="9" rx="4.5" fill={s.color} transform={`rotate(${s.rotation})`} />
@@ -197,7 +289,6 @@
   bind:this={svg}
   class="donut"
   class:wobble
-  class:focused={focus !== null}
   class:grey-art={greyArt}
   viewBox="-20 -20 440 440"
   role="img"
@@ -210,7 +301,17 @@
     {/each}
   </defs>
 
-  <g class="camera" style={camera}>
+  {#if feather > 0}
+    <radialGradient id="donut-feather" gradientUnits="userSpaceOnUse" cx="200" cy="200" r={maskOuter}>
+      <stop offset={maskInner / maskOuter} stop-color="#fff" />
+      <stop offset="1" stop-color="#000" />
+    </radialGradient>
+    <mask id="donut-edge" maskUnits="userSpaceOnUse" x="-2000" y="-2000" width="4400" height="4400">
+      <rect x="-2000" y="-2000" width="4400" height="4400" fill="url(#donut-feather)" />
+    </mask>
+  {/if}
+  <g mask={feather > 0 ? 'url(#donut-edge)' : undefined}>
+  <g class="camera" style={camera} bind:this={cameraEl}>
   {#if !chopped}
     {@render art(FROSTING, false)}
     {#if groups > 1}
@@ -232,6 +333,9 @@
         class="group"
         class:dimmed={dimmed.has(i)}
         class:fallen={fallen.has(i)}
+        class:launched={launched.has(i)}
+        class:snapped
+        class:appear={reappear}
         class:grey={greyed.has(i)}
         class:pulse={pulseGroups.has(i)}
         class:tappable={!!onGroupTap}
@@ -249,16 +353,19 @@
           }
         }}
       >
-        <g clip-path={`url(#donut-wedge-${groups}-${i})`}>
-          {@render art(glazed.has(i) ? GLAZE : FROSTING, glazed.has(i))}
+        <!-- Everything but the badges, so a flying group can fade down to just its number. -->
+        <g class="body">
+          <g clip-path={`url(#donut-wedge-${groups}-${i})`}>
+            {@render art(glazed.has(i) ? GLAZE : FROSTING, glazed.has(i))}
+          </g>
+          {#each sprinkles.filter((s) => s.group === i) as s (s.id)}
+            {@render sprinkle(
+              s,
+              slots[i][s.slot],
+              onSprinkleTap && focus === i ? () => onSprinkleTap(s.id) : undefined,
+            )}
+          {/each}
         </g>
-        {#each sprinkles.filter((s) => s.group === i) as s (s.id)}
-          {@render sprinkle(
-            s,
-            slots[i][s.slot],
-            onSprinkleTap && focus === i ? () => onSprinkleTap(s.id) : undefined,
-          )}
-        {/each}
         {#each sprinkles.filter((s) => s.group === i && counts.has(s.id)) as s (s.id)}
           {@const at = slots[i][s.slot]}
           <!-- Sits just above its sprinkle so the sprinkle still shows. -->
@@ -273,14 +380,20 @@
           {@const at = groupCentre(i, groups)}
           <g class="badge big" style={`transform: translate(${at.x}px, ${at.y}px)`}>
             <g class="pop">
-              <circle r="28" fill="#fff" stroke="#2b2b3a" stroke-width="3.5" />
-              <text text-anchor="middle" dominant-baseline="central" y="1.5">{groupBadges.get(i)}</text>
+              <circle r={badgeRadius} fill="#fff" stroke="#2b2b3a" stroke-width={badgeRadius / 8} />
+              <text
+                text-anchor="middle"
+                dominant-baseline="central"
+                y={badgeRadius / 18}
+                style={`font-size: ${badgeRadius * 1.15}px`}>{groupBadges.get(i)}</text
+              >
             </g>
           </g>
         {/if}
       </g>
     {/each}
   {/if}
+  </g>
   </g>
 </svg>
 
@@ -292,13 +405,8 @@
     display: block;
   }
 
-  .focused {
-    overflow: hidden;
-    mask-image: radial-gradient(circle at center, #000 55%, transparent 72%);
-  }
-
   .camera {
-    transition: transform 0.7s cubic-bezier(0.65, 0, 0.35, 1);
+    transition: transform 0.7s cubic-bezier(0.3, 0.1, 0.2, 1);
   }
 
   .wobble {
@@ -366,21 +474,62 @@
     transition: filter 0.4s;
   }
 
-  .grey,
+  .sprinkle {
+    transition: filter 0.4s;
+  }
+
+  .grey .art,
+  .grey .sprinkle,
   .grey-art .art {
     filter: grayscale(1) brightness(1.05);
+  }
+
+  /* Hover tints, so it's clear what a tap will hit. */
+  .tappable:hover .body {
+    filter: brightness(1.12) saturate(1.1);
+  }
+
+  .sprinkle.tappable .land {
+    transition: transform 0.15s;
+  }
+
+  .sprinkle.tappable:hover .land {
+    transform: scale(1.3);
+  }
+
+  .launched {
+    visibility: hidden;
+  }
+
+  .group.appear {
+    transition: none;
+    animation: appear 0.7s ease-out;
+  }
+
+  @keyframes appear {
+    from { opacity: 0; }
   }
 
   .sprinkle.tappable {
     cursor: pointer;
   }
 
+  .body {
+    transition: filter 0.2s;
+  }
+
   .group {
     transition:
-      filter 0.4s,
-      transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1),
+      transform 0.55s cubic-bezier(0.2, 0.8, 0.3, 1),
       opacity 0.35s;
     transform-box: view-box;
+  }
+
+  /* The snap back into the ring: quick, with a small spring. */
+  .group.snapped:not(.fallen):not(.appear) {
+    transition:
+      transform 0.35s cubic-bezier(0.34, 1.7, 0.64, 1),
+      opacity 0.35s;
   }
 
   .group.fallen {

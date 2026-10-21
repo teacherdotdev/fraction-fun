@@ -16,7 +16,7 @@
     problemFromParams,
     shareOf,
   } from './lib/problem'
-  import { isMuted, play, poof, setMuted, stepDown, stepUp, unlockAudio } from './lib/sound'
+  import { chopThud, isMuted, play, poof, setMuted, stepDown, swoosh, stepUp, unlockAudio } from './lib/sound'
   import { hintFor, nextStep, STEPS, targetFor, type Step } from './lib/steps'
 
   const problem = problemFromParams(new URLSearchParams(location.search))
@@ -47,6 +47,12 @@
   let busy = $state(false)
   let muted = $state(isMuted())
   let donut: Donut | undefined = $state()
+  // The answer reveal.
+  let revealing = $state(false)
+  let answerSoFar: number | null = $state(null)
+  let landings = $state(0)
+  let showWhole = $state(false)
+  let launched = $state(new Set<number>())
 
   let nextId = 0
   type FlightEntry = { flight: Flight; started: number; onLand?: () => void; deal?: number }
@@ -57,19 +63,32 @@
   const target = $derived(targetFor(problem, step))
 
   const highlight: Highlight = $derived(
-    step === 'groups' ? 'denominator' : step === 'sprinkles' ? 'whole' : step === 'pick' ? 'numerator' : null,
+    revealing
+      ? null
+      : step === 'groups'
+        ? 'denominator'
+        : step === 'sprinkles'
+          ? 'whole'
+          : step === 'pick'
+            ? 'numerator'
+            : null,
   )
 
-  const prompt = $derived(
-    {
+  function promptFor(s: Step) {
+    return {
       question: '',
       groups: 'How many equal groups do we need?',
       sprinkles: `What are we splitting into ${pieces}?`,
       count: 'How many sprinkles in one group?',
       pick: `How many ${pieces} do we need?`,
       answer: '',
-    }[step],
-  )
+    }[s]
+  }
+
+  // From Keep! on, the prompt and controls stay laid out exactly as on Pick (just
+  // invisible), so the donut never moves or resizes through the ending.
+  const hold = $derived(revealing)
+  const shownStep: Step = $derived(hold ? 'pick' : step)
 
   /** The counted group's sprinkles, swept clockwise, for counting from the keyboard. */
   const countedSprinkles = $derived.by(() => {
@@ -83,6 +102,8 @@
   const allCounted = $derived(countOrder.length > 0 && countOrder.length === countedSprinkles.length)
 
   const greyed = $derived.by(() => {
+    // While counting, the other groups' sprinkles go grey too.
+    if (step === 'count') return new Set(range(problem.denominator).filter((g) => g !== COUNTED_GROUP))
     if (step === 'pick' || step === 'answer') {
       return new Set(range(problem.denominator).filter((g) => !glazed.has(g)))
     }
@@ -95,15 +116,16 @@
   )
 
   const instruction = $derived(
-    step === 'count'
+    shownStep === 'count'
       ? 'Tap or click each sprinkle to count it.'
-      : step === 'pick'
+      : shownStep === 'pick'
         ? `Tap or click the ${pieces} you need.`
         : '',
   )
 
   const dimmed = $derived.by(() => {
-    if (step === 'count') {
+    // The other groups stay faded until the zoom-out finishes, then fade back in.
+    if (step === 'count' || (step === 'pick' && zoomingOut)) {
       return new Set(range(problem.denominator).filter((i) => i !== COUNTED_GROUP))
     }
     return new Set<number>()
@@ -117,7 +139,9 @@
   })
 
   const groupBadges = $derived.by(() => {
-    if (step === 'pick') return new Map([...glazed].map((g) => [g, share] as const))
+    if (step === 'pick' || (step === 'answer' && !showWhole)) {
+      return new Map([...glazed].map((g) => [g, share] as const))
+    }
     return new Map<number, number>()
   })
 
@@ -141,15 +165,84 @@
     return new Promise((resolve) => setTimeout(resolve, ms))
   }
 
-  async function advance(delay = 0) {
+  async function advance(delay = 0, sound: 'whoosh' | 'intro' = 'whoosh') {
     busy = true
+    const run = epoch
     await wait(delay)
+    if (run !== epoch) return
     attempts = 0
     hintShown = false
+    const from = step
     step = nextStep(step)
-    play('whoosh', { volume: 0.35 })
+    pushStep(step)
+    play(sound, { volume: sound === 'intro' ? 0.8 : 0.35 })
     busy = false
+    if (from === 'count') settleZoom()
     if (step === 'answer') celebrate()
+  }
+
+  let zoomingOut = $state(false)
+  function settleZoom() {
+    zoomingOut = true
+    setTimeout(() => (zoomingOut = false), 750)
+  }
+
+  // ——— Browser history ———
+  // Each step gets its own history entry (…&step=sprinkles), so the browser's Back
+  // button returns to the step before instead of leaving the page. Forward is ignored,
+  // because a later step can't be rebuilt from the URL alone.
+  // Bumped on every jump back, so timers and animations from the old step stop.
+  let epoch = 0
+
+  function urlFor(s: Step) {
+    const url = new URL(location.href)
+    if (s === 'question') url.searchParams.delete('step')
+    else url.searchParams.set('step', s)
+    return url
+  }
+
+  function pushStep(s: Step) {
+    history.pushState({ step: s }, '', urlFor(s))
+  }
+
+  // A refresh always starts from the question.
+  history.replaceState({ step: 'question' }, '', urlFor('question'))
+
+  function onHistory(event: PopStateEvent) {
+    const target: Step = event.state?.step ?? 'question'
+    if (STEPS.indexOf(target) > STEPS.indexOf(step)) history.back()
+    else if (target !== step) goBackTo(target)
+  }
+
+  /** Puts everything back as it was when `target` began. */
+  function goBackTo(target: Step) {
+    epoch += 1
+    busy = false
+    chopping = false
+    attempts = 0
+    hintShown = false
+    flights.clear()
+    flying = []
+    poofs = []
+    confetti?.clear()
+    donut?.settle()
+    revealing = false
+    answerSoFar = null
+    landings = 0
+    showWhole = false
+    launched = new Set()
+    fallen = new Set()
+    const at = STEPS.indexOf(target)
+    if (at <= STEPS.indexOf('pick')) kept = new Set()
+    if (at <= STEPS.indexOf('sprinkles')) countOrder = []
+    if (at <= STEPS.indexOf('groups')) {
+      chopped = false
+      landed = []
+      thrown = 0
+    }
+    if (target === 'question') groups = 1
+    step = target
+    play('whoosh', { volume: 0.35 })
   }
 
   const HINT_SECONDS = 4
@@ -172,8 +265,7 @@
   // ——— Question ———
   function start() {
     unlockAudio()
-    play('click')
-    advance()
+    advance(0, 'intro')
   }
 
   // ——— Groups ———
@@ -191,12 +283,14 @@
     // The knife swishes down each cut line in turn…
     chopping = true
     play('chop')
+    const run = epoch
     await wait(220 + 70 * (groups - 1) + 60)
+    if (run !== epoch) return
     // …then the pieces thunk apart.
     chopping = false
     chopped = true
     await wait(40)
-    play('thunk')
+    chopThud()
     advance(950)
   }
 
@@ -268,8 +362,7 @@
     busy = true
     // Let the last throws land before moving on.
     while (flights.size) await wait(60)
-    play('pop')
-    advance(500)
+    advance()
   }
 
   // ——— Count ———
@@ -289,7 +382,7 @@
   function doneCounting() {
     // Done! only shows once every sprinkle has a number.
     if (!allCounted) return
-    advance(500)
+    advance()
   }
 
   // ——— Pick ———
@@ -315,69 +408,56 @@
   }
 
   // ——— Answer ———
-  // The kept groups' badges fly up into a sum, "=" fades in, the total pops,
-  // then the whole donut and the summary come back underneath.
-  const BADGE_STAGGER = 350
-  const BADGE_FLIGHT = 650
-  let revealing = $state(false)
-  let showTotal = $state(false)
-  let showWhole = $state(false)
+  // The question swings down into "¾ of 20 =", then each kept group swings out to
+  // the right and back into the answer, fading to just its number. Each landing
+  // adds on (5, 10, 15…). Then the cheer, and the whole donut and summary return.
+  let island: Island | undefined = $state()
   let confetti: Confetti | undefined = $state()
   const keptInOrder = $derived([...kept].sort((a, b) => a - b))
-  const equalsAt = $derived(300 + keptInOrder.length * BADGE_STAGGER + BADGE_FLIGHT - 200)
 
   async function celebrate() {
-    keptInOrder.forEach((_, i) => {
-      setTimeout(() => play('pop', { rate: 1 + i * 0.08 }), 300 + i * BADGE_STAGGER + BADGE_FLIGHT)
-    })
-    await wait(equalsAt + 350)
-    showTotal = true
+    const run = epoch
+    // Pieces take off one after another, each sooner and quicker than the last,
+    // so a long sum builds up speed on its way to the answer.
+    const landed: Promise<void>[] = []
+    for (const [n, group] of keptInOrder.entries()) {
+      if (!donut || !island || run !== epoch) return
+      const slot = island.slotPoint()
+      const duration = Math.max(480, 800 * 0.88 ** n)
+      // The swoosh starts as the number lifts off, once its piece has faded.
+      setTimeout(() => run === epoch && swoosh(duration / 1000, 1 + n * 0.06), 350)
+      landed.push(
+        donut.launchGroup(group, slot, slot.size, duration).then(() => {
+          if (run !== epoch) return
+          launched = new Set([...launched, group])
+          answerSoFar = (answerSoFar ?? 0) + share
+          landings += 1
+          play('pop', { rate: 0.9 + landings * 0.1 })
+        }, () => {}),
+      )
+      if (n < keptInOrder.length - 1) await wait(Math.max(150, 520 * 0.75 ** n))
+    }
+    await Promise.all(landed)
+    await wait(250)
+    if (run !== epoch) return
     play('success')
     play('cheer', { volume: 0.7 })
     confetti?.burst({ few: reduceMotion })
     await wait(900)
-    // Bring the fallen groups back, greyed, to show all the groups again.
+    if (run !== epoch) return
+    // The whole donut fades back in, with the groups we didn't need in grey.
+    donut?.settle()
+    launched = new Set()
     fallen = new Set()
     showWhole = true
   }
 
-  /** Starts a sum badge where its group's badge sat on the donut, then glides it into place. */
-  function flyFrom(node: HTMLElement, { from, delay }: { from: Point | null; delay: number }) {
-    const box = node.getBoundingClientRect()
-    const dx = from ? from.x - (box.left + box.width / 2) : 0
-    const dy = from ? from.y - (box.top + box.height / 2) : 30
-    node.animate(
-      [
-        { transform: `translate(${dx}px, ${dy}px) scale(1.25)`, opacity: from ? 1 : 0 },
-        { transform: 'none', opacity: 1 },
-      ],
-      {
-        duration: reduceMotion ? 1 : BADGE_FLIGHT,
-        delay,
-        easing: 'cubic-bezier(0.65, 0, 0.35, 1)',
-        fill: 'backwards',
-      },
-    )
-  }
-
+  /** Back to the question, through history, so Back doesn't return to the answer. */
   function again() {
     play('click')
-    flights.clear()
-    flying = []
-    step = 'question'
-    groups = 1
-    chopped = false
-    landed = []
-    thrown = 0
-    countOrder = []
-    kept = new Set()
-    fallen = new Set()
-    revealing = false
-    showTotal = false
-    showWhole = false
-    confetti?.clear()
-    attempts = 0
-    play('whoosh', { volume: 0.5 })
+    const steps = STEPS.indexOf(step)
+    if (steps > 0) history.go(-steps)
+    else goBackTo('question')
   }
 
   // ——— Flights ———
@@ -439,14 +519,22 @@
   }
 
   const confirmLabel = $derived(
-    { question: 'Start!', groups: 'Chop!', sprinkles: 'Confirm!', count: 'Done!', pick: 'Keep!', answer: 'Again!' }[step],
+    { question: 'Start!', groups: 'Chop!', sprinkles: 'Confirm!', count: 'Done!', pick: 'Keep!', answer: 'Again!' }[shownStep],
   )
 </script>
 
-<svelte:window onkeydown={onKey} />
+<svelte:window onkeydown={onKey} onpopstate={onHistory} />
 
 <main class="app" class:started={step !== 'question'}>
-  <Island {problem} pinned={step !== 'question'} {highlight} gone={revealing} />
+  <Island
+    bind:this={island}
+    {problem}
+    mode={step === 'question' ? 'full' : revealing ? 'answer' : 'pinned'}
+    {highlight}
+    answer={answerSoFar}
+    {landings}
+    done={showWhole}
+  />
   <Confetti bind:this={confetti} />
 
   <button class="mute" onclick={toggleMute} aria-label={muted ? 'Turn sound on' : 'Turn sound off'}>
@@ -458,33 +546,21 @@
   </button>
 
   {#if step !== 'question'}
-    <ol class="dots" aria-label="Progress">
+    <ol class="dots" class:gone={revealing} aria-label="Progress">
       {#each STEPS.slice(1) as s, i (s)}
         <li class:done={STEPS.indexOf(step) > i + 1} class:current={step === s}></li>
       {/each}
     </ol>
 
     <section class="prompt" aria-live="polite">
-      {#key step}
-        {#if step === 'answer'}
-          <p class="sum" aria-label={`${keptInOrder.map(() => share).join(' plus ')} equals ${answerOf(problem)}`}>
-            {#each keptInOrder as group, i (group)}
-              {#if i > 0}
-                <span class="op" style={`animation-delay: ${300 + i * BADGE_STAGGER + 300}ms`}>+</span>
-              {/if}
-              <span class="badge" use:flyFrom={{ from: donut?.badgePoint(group) ?? null, delay: 300 + i * BADGE_STAGGER }}>{share}</span>
-            {/each}
-            <span class="op" style={`animation-delay: ${equalsAt}ms`}>=</span>
-            <strong class="total" class:shown={showTotal}>{answerOf(problem)}</strong>
-          </p>
-        {:else}
-          <h2 in:fly={{ y: 24, duration: 400, delay: 150 }}>{prompt}</h2>
-        {/if}
+      {#key shownStep}
+        <!-- Kept (invisibly) while groups fly, so the donut doesn't resize mid-flight. -->
+        <h2 class:hold in:fly={{ y: 24, duration: 400, delay: 150 }}>{promptFor(shownStep)}</h2>
       {/key}
     </section>
 
-    <section class="stage" class:answering={step === 'answer'} in:scale={{ start: 0.6, duration: 500, delay: 200 }}>
-      <div class="donut-box" class:waiting={step === 'answer' && !showWhole}>
+    <section class="stage" in:scale={{ start: 0.6, duration: 500, delay: 200 }}>
+      <div class="donut-box">
         <Donut
           bind:this={donut}
           groups={chopped ? problem.denominator : groups}
@@ -496,6 +572,8 @@
           {fallen}
           counts={step === 'count' ? counts : new Map()}
           {groupBadges}
+          {launched}
+          reappear={showWhole}
           {wobble}
           {pulseGroups}
           {greyed}
@@ -505,30 +583,30 @@
           onGroupTap={step === 'pick' && !busy ? toggleGroup : undefined}
         />
       </div>
-      {#if step === 'pick' && pickedMath}
+      {#if step === 'pick' && pickedMath && !hold}
         <!-- Floats under the donut so it never pushes the layout around. -->
         {#key pickedMath}
           <p class="math-bubble" in:scale={{ start: 0.85, duration: 200 }}>{pickedMath}</p>
         {/key}
       {/if}
-      {#if step === 'answer'}
-        <!-- Space is kept from the start so nothing shifts when it fades in. -->
-        <div class="summary" class:shown={showWhole}>
-          <p class="equation">
-            <span class="fraction" aria-hidden="true"><span>{problem.numerator}</span><span>{problem.denominator}</span></span>
-            of {problem.whole} = <strong>{answerOf(problem)}</strong>
-          </p>
-          <p>{fractionWords(problem)} of {problem.whole} = {answerOf(problem)}</p>
-          <p>
-            {problem.numerator} {problem.numerator === 1 ? 'group' : 'groups'} of {share} → {problem.numerator} × {share} = {answerOf(problem)}
-          </p>
-          <p class="soft">{problem.denominator} groups of {share} = {problem.whole}</p>
-        </div>
-      {/if}
     </section>
   {/if}
 
-  <footer class="control">
+  <footer class="control" class:hold class:finished={showWhole}>
+    {#if step === 'answer'}
+      <!-- Laid over the controls' (hidden) space, so the donut never resizes. -->
+      <div class="summary" class:shown={showWhole}>
+        <p>{fractionWords(problem)} of {problem.whole} = <strong>{answerOf(problem)}</strong></p>
+        {#if problem.numerator > 1}
+          <p>{Array(problem.numerator).fill(share).join(' + ')} = {answerOf(problem)}</p>
+        {/if}
+        <p>
+          {problem.numerator} {problem.numerator === 1 ? 'group' : 'groups'} of {share} → {problem.numerator} × {share} = {answerOf(problem)}
+        </p>
+        <p class="soft">{problem.denominator} groups of {share} = {problem.whole}</p>
+      </div>
+    {/if}
+
     <!-- Floats above the controls, over the donut, so showing it never moves anything. -->
     <div class="hint-spot" aria-live="polite">
       {#if hint && hintShown}
@@ -537,8 +615,9 @@
         {/key}
       {/if}
     </div>
-    {#if instruction}
-      <p class="instruction">{instruction}</p>
+    {#if step !== 'question'}
+      <!-- Always there, blank when unused, so the controls never change height. -->
+      <p class="instruction">{instruction || '\u00a0'}</p>
     {/if}
     {#if step === 'groups'}
       <Stepper value={groups} label={groups === 1 ? 'group' : 'groups'} onMinus={() => changeGroups(-1)} onPlus={() => changeGroups(1)} {pulse} />
@@ -557,7 +636,7 @@
         {#key countOrder.length}<span class="number">{countOrder.length}</span>{/key}
         <span class="label">counted</span>
       </div>
-    {:else if step === 'pick'}
+    {:else if shownStep === 'pick'}
       <div class="picked" aria-live="polite">
         {#key kept.size}<span class="number">{kept.size}</span>{/key}
         <span class="label">{fractionName(problem.denominator, kept.size)}</span>
@@ -567,10 +646,11 @@
     <button
       class="go"
       class:big={step === 'question'}
-      class:waiting={step === 'count' && !allCounted}
+      class:waiting={(step === 'count' && !allCounted) || (hold && !showWhole)}
       onclick={confirm}
-      disabled={busy || (step === 'count' && !allCounted)}
-      aria-hidden={step === 'count' && !allCounted}>{confirmLabel}</button
+      disabled={busy || (step === 'count' && !allCounted) || (hold && !showWhole)}
+      aria-hidden={(step === 'count' && !allCounted) || (hold && !showWhole)}
+      >{showWhole ? 'Again!' : confirmLabel}</button
     >
   </footer>
 
@@ -671,6 +751,16 @@
     font: 700 clamp(24px, 3.4vw, 40px) / 1.2 var(--font);
   }
 
+  /* On narrow screens some prompts wrap, so every prompt gets room for two lines
+     and the donut doesn't resize between steps. */
+  @media (max-width: 700px) {
+    .prompt h2 {
+      min-height: 2.4em;
+      display: grid;
+      align-items: center;
+    }
+  }
+
   .hint-spot {
     position: absolute;
     left: 0;
@@ -697,68 +787,22 @@
     font: 600 clamp(17px, 2vw, 22px) / 1.3 var(--font);
   }
 
-  /* The answer headline: the kept groups' badges, added up. */
-  .sum {
-    margin: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 0.3em;
-    font: 700 clamp(36px, 5.5vw, 64px) / 1 var(--font);
-  }
-
-  /* Above the stage, so badges fly over the donut, not behind it. */
-  .sum {
-    position: relative;
-    z-index: 5;
-  }
-
-  .sum .op {
-    animation: op-in 0.3s ease-out backwards;
-  }
-
-  @keyframes op-in {
-    from {
-      opacity: 0;
-      transform: scale(0.4);
-    }
-  }
-
-  .sum .badge {
-    display: grid;
-    place-items: center;
-    width: 1.5em;
-    height: 1.5em;
-    border-radius: 50%;
-    background: #fff;
-    border: 0.07em solid var(--ink);
-    font-size: 0.75em;
-  }
-
-  .sum .total {
-    color: var(--accent);
-    opacity: 0;
-    transform: scale(0.3);
-    transition:
-      opacity 0.2s,
-      transform 0.45s cubic-bezier(0.34, 1.8, 0.64, 1);
-  }
-
-  .sum .total.shown {
-    opacity: 1;
-    transform: none;
-  }
-
   .summary {
+    position: absolute;
+    left: 50%;
+    bottom: 96px;
+    translate: -50% 0;
+    z-index: 2;
+    width: max-content;
+    max-width: calc(100vw - 32px);
     display: grid;
     justify-items: center;
     gap: 2px;
-    padding: 12px 28px 14px;
-    border-radius: 24px;
+    padding: 8px 24px 10px;
+    border-radius: 20px;
     background: #fff;
     box-shadow: 0 6px 24px #2b2b3a1a;
-    font: 600 clamp(16px, 1.9vw, 21px) / 1.35 var(--font);
+    font: 600 clamp(15px, 1.7vw, 19px) / 1.3 var(--font);
     opacity: 0;
     transform: translateY(12px);
     transition:
@@ -775,12 +819,22 @@
     margin: 0;
   }
 
-  .summary .equation {
-    font-size: 1.6em;
-    font-weight: 700;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25em;
+  .summary strong {
+    color: var(--accent);
+  }
+
+  .hold .instruction,
+  .hold .picked,
+  h2.hold {
+    visibility: hidden;
+  }
+
+  .dots {
+    transition: opacity 0.4s;
+  }
+
+  .dots.gone {
+    opacity: 0;
   }
 
   .math-bubble {
@@ -798,21 +852,8 @@
     white-space: nowrap;
   }
 
-  .equation strong {
-    color: var(--accent);
-  }
 
-  .fraction {
-    display: inline-grid;
-    font-size: 0.62em;
-    line-height: 1;
-    text-align: center;
-  }
 
-  .fraction span:first-child {
-    border-bottom: 0.09em solid currentColor;
-    padding: 0 0.15em 0.05em;
-  }
 
   .soft {
     color: var(--ink-soft);
@@ -828,16 +869,6 @@
     padding: 12px;
   }
 
-  /* Donut above, summary below. */
-  .stage.answering {
-    grid-template-rows: minmax(0, 1fr) auto;
-    gap: 12px;
-  }
-
-  .donut-box.waiting {
-    opacity: 0.55;
-    transition: opacity 0.5s;
-  }
 
   .donut-box {
     transition: opacity 0.5s;
