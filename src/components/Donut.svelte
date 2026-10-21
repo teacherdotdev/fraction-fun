@@ -23,12 +23,13 @@
     wedgePath,
     type Point,
   } from '../lib/donut'
-  import { ITEM_WORDS, type Item } from '../lib/items'
+  import { ARRIVAL, ITEM_WORDS, type Item } from '../lib/items'
   import { CHEESE_BLOBS, CHEESE_PATH, SAUCE_PATH } from '../lib/pizzaArt'
   import { MAX_WHOLE } from '../lib/problem'
+  import { ITEM_ART, ITEM_TOPPING } from './items'
 
   type Props = {
-    /** The food being shared: a donut with sprinkles, or a pizza with pepperoni. */
+    /** The food being shared: a donut with sprinkles, a pizza with pepperoni, and so on. */
     item?: Item
     /** Groups shown as cut lines before the chop, or as pieces after it. */
     groups: number
@@ -91,7 +92,9 @@
   /** Where the cut lines start: just inside the hole, or the very centre of a pizza. */
   const cutFrom = $derived(CENTER - Math.max(shape.hole - 6, 0))
   /** How far a count number sits above its piece, so the piece still shows. */
-  const countLift = $derived(item === 'pizza' ? 14 : 9)
+  const countLift = $derived(item === 'donut' ? 9 : shape.toppingRadius + 2.5)
+  /** Seeds and holes grow out of the food where they're dealt, instead of landing. */
+  const pops = $derived(ARRIVAL[item] === 'pop')
   const RING = (r: number) =>
     `M${CENTER - r} ${CENTER}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0Z`
 
@@ -255,6 +258,9 @@
 {#snippet art(frosting: string, shine: boolean)}
   {#if item === 'pizza'}
     {@render pizzaArt(shine)}
+  {:else if item !== 'donut'}
+    {@const Art = ITEM_ART[item]}
+    <g class="art"><Art {shine} /></g>
   {:else}
   <g class="art">
   <path d={`${RING(186)} ${RING(56)}`} fill="#e3a35c" fill-rule="evenodd" />
@@ -332,6 +338,11 @@
           <circle cx="3.5" cy="1.5" r="1.6" fill="#f3b892" />
           <circle cx="-0.5" cy="4.5" r="1.7" fill="#f3b892" />
         </g>
+      </g>
+    {:else if item !== 'donut'}
+      {@const Topping = ITEM_TOPPING[item]}
+      <g class="land" class:grow={pops}>
+        <Topping rotation={s.rotation} toward={(Math.atan2(CENTER - at.y, CENTER - at.x) * 180) / Math.PI} />
       </g>
     {:else}
     <g class="land">
@@ -604,7 +615,7 @@
     outline: none;
   }
 
-  .tappable:focus-visible .frosting {
+  .tappable:focus-visible :global(.frosting) {
     stroke: #1f7ae0;
     stroke-width: 6;
   }
@@ -623,6 +634,17 @@
 
   @keyframes land {
     from { transform: scale(1.5); }
+  }
+
+  /* A seed or hole popping up out of the food: grow, overshoot, settle. */
+  .land.grow {
+    animation: grow 0.25s ease-out;
+  }
+
+  @keyframes grow {
+    from { transform: scale(0); }
+    60% { transform: scale(1.15); }
+    to { transform: scale(1); }
   }
 
   .badge text {

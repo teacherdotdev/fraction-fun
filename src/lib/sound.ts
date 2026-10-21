@@ -174,6 +174,30 @@ export function poof() {
 }
 
 /**
+ * A soft, round "bloop" for a seed or hole popping up out of the food: a sine
+ * that swoops up in pitch with a quick fade, a little higher or lower each time.
+ */
+export function bloop() {
+  if (muted) return
+  const ctx = audio()
+  if (!ctx) return
+  const now = ctx.currentTime
+  const pitch = 0.88 + Math.random() * 0.25
+  const tone = ctx.createOscillator()
+  tone.type = 'sine'
+  tone.frequency.setValueAtTime(260 * pitch, now)
+  tone.frequency.exponentialRampToValueAtTime(720 * pitch, now + 0.07)
+  tone.frequency.exponentialRampToValueAtTime(560 * pitch, now + 0.14)
+  const gain = ctx.createGain()
+  gain.gain.setValueAtTime(0.0001, now)
+  gain.gain.exponentialRampToValueAtTime(0.32, now + 0.012)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16)
+  tone.connect(gain).connect(ctx.destination)
+  tone.start(now)
+  tone.stop(now + 0.18)
+}
+
+/**
  * A swoosh lasting `seconds`, for something swinging through the air: breathy
  * noise whose pitch sweeps up then down, loudest mid-swing when it moves fastest.
  */

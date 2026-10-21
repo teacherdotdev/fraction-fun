@@ -1,7 +1,8 @@
-// Geometry for a donut (or a pizza) drawn in a 400×400 box centred on (200, 200).
+// Geometry for a donut (or any other item) drawn in a 400×400 box centred on (200, 200).
 // Group 0 starts at twelve o'clock and groups go clockwise.
 
 import type { Item } from './items'
+import { CHEESE_MIN_RADIUS } from './pizzaArt'
 import { MAX_WHOLE } from './problem'
 
 export const CENTER = 200
@@ -12,13 +13,20 @@ export const CHOP_GAP = 12
 /** A pepperoni's radius. */
 export const PEPPERONI_RADIUS = 11.5
 
-/** The parts of an item's geometry that differ between a donut and a pizza. */
+/** The parts of an item's geometry that differ from one item to another. */
 export type ItemShape = {
   /** Radius of the hole in the middle; 0 for none. */
   hole: number
-  /** Toppings stay between these radii. */
+  /** Toppings' centres stay between these radii. */
   toppingInner: number
   toppingOuter: number
+  /** How far a topping reaches from its centre: its radius. */
+  toppingRadius: number
+  /**
+   * The item's top (cheese, dough, frosting, flesh) reaches at least this far from
+   * the centre all the way round, so toppings that stay inside it sit whole on it.
+   */
+  faceRadius?: number
   /**
    * How far a topping's centre keeps from each cut, measured straight across.
    * Without it, toppings keep an angular margin (the donut's original rule).
@@ -32,19 +40,52 @@ export type ItemShape = {
   layouts: number
 }
 
+/** Everything an item without a hole needs, given its topping's size and how far out toppings go. */
+function solid(toppingRadius: number, toppingOuter: number, faceRadius: number): ItemShape {
+  return {
+    hole: 0,
+    toppingInner: 0,
+    toppingOuter,
+    toppingRadius,
+    faceRadius,
+    cutClearance: toppingRadius + 2.5,
+    badgeAt: 115,
+    candidates: 100,
+    layouts: 8,
+  }
+}
+
 export const SHAPES: Record<Item, ItemShape> = {
-  donut: { hole: HOLE_RADIUS, toppingInner: 92, toppingOuter: 138, badgeAt: 115, candidates: 80, layouts: 1 },
+  donut: {
+    hole: HOLE_RADIUS,
+    toppingInner: 92,
+    toppingOuter: 138,
+    toppingRadius: 13,
+    badgeAt: 115,
+    candidates: 80,
+    layouts: 1,
+  },
   // Pepperoni sit anywhere on the cheese, clear of the crust and of every cut,
   // so even a thin twelfth keeps its pepperoni whole.
   pizza: {
     hole: 0,
     toppingInner: 0,
     toppingOuter: 136,
+    toppingRadius: PEPPERONI_RADIUS,
+    faceRadius: CHEESE_MIN_RADIUS,
     cutClearance: PEPPERONI_RADIUS + 2.5,
     badgeAt: 115,
     candidates: 100,
     layouts: 8,
   },
+  // Chocolate chips anywhere on the dough, inside the bumpy baked edge.
+  cookie: solid(9.5, 150, 170),
+  // Candles on the flat top, inside the piped frosting border.
+  cake: solid(11.5, 136, 150),
+  // Seeds in the red flesh, clear of the pale band and the rind.
+  watermelon: solid(9, 138, 152),
+  // Holes in the cheese's face, inside the waxed rind.
+  cheese: solid(10.5, 150, 168),
 }
 
 export type Point = { x: number; y: number }
@@ -116,7 +157,7 @@ export function focusOn(
     const span = (Math.PI * 2) / groups
     const deepest = Math.min(cutClearance / Math.sin(Math.min(span / 2, Math.PI / 2)), toppingOuter)
     const reach =
-      PEPPERONI_RADIUS +
+      SHAPES[item].toppingRadius +
       Math.max(
         ...Array.from({ length: 17 }, (_, step) => polar(toppingOuter, angleOf(index + step / 16, groups)))
           .concat(polar(deepest, angleOf(index + 0.5, groups)))
@@ -130,7 +171,7 @@ export function focusOn(
 /** How far from the middle of the view a zoomed-in topping stays fully clear of the faded edge. */
 const ZOOM_CLEAR = 165
 
-/** The visual centre of a group's frosting (or cheese), for badges. */
+/** The visual centre of a group's top (frosting, cheese, dough…), for badges. */
 export function groupCentre(index: number, groups: number, item: Item = 'donut'): Point {
   return polar(SHAPES[item].badgeAt, angleOf(index + 0.5, groups))
 }

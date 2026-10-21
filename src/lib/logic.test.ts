@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { angleOf, CENTER, countingOrder, dealTo, focusOn, PEPPERONI_RADIUS, sprinkleSlots } from './donut'
+import { angleOf, CENTER, countingOrder, dealTo, focusOn, SHAPES, sprinkleSlots } from './donut'
 import { planFlight, positionAt } from './flight'
-import { itemFromParams, toppingsFor } from './items'
-import { CHEESE_MIN_RADIUS } from './pizzaArt'
+import { ARRIVAL, ITEM_WORDS, itemFromParams, ITEMS, toppingsFor, type Item } from './items'
 import { answerOf, DEFAULT_PROBLEM, fractionWords, problemFromParams, shareOf } from './problem'
 import { hintFor, nextStep, STEPS, targetFor } from './steps'
 
@@ -120,6 +119,28 @@ describe('items', () => {
     expect(itemFromParams(params(''))).toBe('donut')
     expect(itemFromParams(params('item=Pizza'))).toBe('donut')
     expect(itemFromParams(params('item=bagel'))).toBe('donut')
+    expect(itemFromParams(params('item=toString'))).toBe('donut')
+    expect(itemFromParams(params('item=Cheese'))).toBe('donut')
+  })
+
+  it.each(['donut', 'pizza', 'cookie', 'cake', 'watermelon', 'cheese'] as const)('reads ?item=%s', (item) => {
+    expect(itemFromParams(params(`n=1&d=4&of=20&item=${item}`))).toBe(item)
+  })
+
+  it('lists every item once, donut first, each with a label', () => {
+    expect(ITEMS).toEqual(['donut', 'pizza', 'cookie', 'cake', 'watermelon', 'cheese'])
+    expect(ITEMS.map((item) => ITEM_WORDS[item].label)).toEqual([
+      'Donut',
+      'Pizza',
+      'Cookie',
+      'Cake',
+      'Watermelon',
+      'Cheese',
+    ])
+  })
+
+  it('throws toppings onto most items, but seeds and holes pop up in place', () => {
+    expect(ITEMS.filter((item) => ARRIVAL[item] === 'pop')).toEqual(['watermelon', 'cheese'])
   })
 
   it('names the pieces for each item', () => {
@@ -129,43 +150,80 @@ describe('items', () => {
     expect(toppingsFor('pizza', 20)).toBe('pepperoni')
     expect(hintFor(DEFAULT_PROBLEM, 'sprinkles', 2, 'pizza')?.text).toBe("We're sharing 20 pepperoni.")
     expect(hintFor(DEFAULT_PROBLEM, 'sprinkles', 2)?.text).toBe("We're sharing 20 sprinkles.")
+    expect(toppingsFor('cookie', 1)).toBe('chip')
+    expect(toppingsFor('cookie', 2)).toBe('chips')
+    expect(toppingsFor('cake', 1)).toBe('candle')
+    expect(toppingsFor('cake', 3)).toBe('candles')
+    expect(toppingsFor('watermelon', 1)).toBe('seed')
+    expect(toppingsFor('watermelon', 0)).toBe('seeds')
+    expect(toppingsFor('cheese', 1)).toBe('hole')
+    expect(toppingsFor('cheese', 12)).toBe('holes')
+    expect(hintFor(DEFAULT_PROBLEM, 'sprinkles', 2, 'cheese')?.text).toBe("We're sharing 20 holes.")
   })
 })
 
-describe('pepperoni on a pizza', () => {
-  // Every group count, with the most pepperoni each group can get (48 shared out).
-  const cases = Array.from({ length: 11 }, (_, i) => i + 2).map((groups) => ({
-    groups,
-    count: Math.floor(48 / groups),
-  }))
+describe('toppings on items without a hole', () => {
+  const solid: Item[] = ['pizza', 'cookie', 'cake', 'watermelon', 'cheese']
+  // Every item and group count, with the most toppings each group can get (48 shared out).
+  const cases = solid.flatMap((item) =>
+    Array.from({ length: 11 }, (_, i) => i + 2).map((groups) => ({ item, groups, count: Math.floor(48 / groups) })),
+  )
 
-  it.each(cases)('never overlap in $groups groups of $count', ({ groups, count }) => {
+  it.each(cases)('never overlap on a $item in $groups groups of $count', ({ item, groups, count }) => {
+    const { toppingRadius } = SHAPES[item]
     for (let index = 0; index < groups; index += 1) {
-      const slots = sprinkleSlots(index, groups, count, 'pizza')
+      const slots = sprinkleSlots(index, groups, count, item)
       const closest = Math.min(
         ...slots.flatMap((a, i) => slots.slice(i + 1).map((b) => Math.hypot(a.x - b.x, a.y - b.y))),
       )
       // A clear gap between neighbours, not just touching.
-      expect(closest).toBeGreaterThan(PEPPERONI_RADIUS * 2 + 2)
+      expect(closest).toBeGreaterThan(toppingRadius * 2 + 2)
     }
   })
 
-  it.each(cases)('stay whole inside their slice and on the cheese in $groups groups', ({ groups, count }) => {
+  it.each(cases)('stay whole inside their slice and on a $item in $groups groups', ({ item, groups, count }) => {
+    const { toppingRadius, faceRadius } = SHAPES[item]
+    expect(faceRadius).toBeDefined()
     for (let index = 0; index < groups; index += 1) {
       const start = angleOf(index, groups)
       const span = (Math.PI * 2) / groups
-      for (const p of sprinkleSlots(index, groups, count, 'pizza')) {
+      for (const p of sprinkleSlots(index, groups, count, item)) {
         const radius = Math.hypot(p.x - CENTER, p.y - CENTER)
         const turn = (((Math.atan2(p.y - CENTER, p.x - CENTER) - start) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
         expect(turn).toBeLessThanOrEqual(span)
-        // Straight-line distance to each cut is more than a pepperoni's radius.
+        // Straight-line distance to each cut is more than a topping's radius.
         const toCut = (t: number) => (t >= Math.PI / 2 ? radius : radius * Math.sin(t))
-        expect(toCut(turn)).toBeGreaterThan(PEPPERONI_RADIUS + 1)
-        expect(toCut(span - turn)).toBeGreaterThan(PEPPERONI_RADIUS + 1)
-        // On the cheese, clear of the sauce and crust.
-        expect(radius + PEPPERONI_RADIUS).toBeLessThanOrEqual(CHEESE_MIN_RADIUS)
+        expect(toCut(turn)).toBeGreaterThan(toppingRadius + 1)
+        expect(toCut(span - turn)).toBeGreaterThan(toppingRadius + 1)
+        // On the item's top, clear of its edge (crust, rind, border).
+        expect(radius + toppingRadius).toBeLessThanOrEqual(faceRadius!)
       }
     }
+  })
+
+  it('leave the pizza exactly as it was', () => {
+    // Pinned from before the other items existed, so the pepperoni never move.
+    const twelfth = [
+      { x: 228.58361247224502, y: 300.7564375947102 },
+      { x: 214.16549790695, y: 255.9696838084414 },
+      { x: 222.8299861029203, y: 334.00815043657263 },
+      { x: 250.51563370063133, y: 324.96347718347994 },
+    ]
+    sprinkleSlots(5, 12, 4, 'pizza').forEach((slot, i) => {
+      expect(slot.x).toBeCloseTo(twelfth[i].x, 9)
+      expect(slot.y).toBeCloseTo(twelfth[i].y, 9)
+    })
+    const third = [
+      { x: 191.05664695702407, y: 245.2170132716234 },
+      { x: 300.73762560466747, y: 285.2822071533179 },
+      { x: 93.8525773286506, y: 280.2872660308525 },
+    ]
+    sprinkleSlots(1, 3, 16, 'pizza').slice(0, 3).forEach((slot, i) => {
+      expect(slot.x).toBeCloseTo(third[i].x, 9)
+      expect(slot.y).toBeCloseTo(third[i].y, 9)
+    })
+    expect(focusOn(0, 5, 'pizza').scale).toBeCloseTo(1.4189942598600478, 9)
+    expect(focusOn(0, 12, 'pizza').scale).toBeCloseTo(1.8279569892473118, 9)
   })
 
   it('leave the donut exactly as it was', () => {
@@ -183,9 +241,9 @@ describe('pepperoni on a pizza', () => {
     })
   })
 
-  it('zoom keeps a pizza slice inside the clear middle of the view', () => {
+  it.each(solid)('zoom keeps a %s slice inside the clear middle of the view', (item) => {
     for (let groups = 2; groups <= 12; groups += 1) {
-      const { scale } = focusOn(0, groups, 'pizza')
+      const { scale } = focusOn(0, groups, item)
       expect(scale).toBeGreaterThanOrEqual(1)
       expect(scale).toBeLessThanOrEqual(focusOn(0, groups).scale)
     }

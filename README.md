@@ -16,7 +16,7 @@ Anything invalid falls back to the default.
 
 Two optional params change how it's shown, and are left out for the defaults:
 
-- `item=pizza` works the problem on a pizza instead of the donut
+- `item=pizza`, `item=cookie`, `item=cake`, `item=watermelon` or `item=cheese` works the problem on that food instead of the donut (anything else is a donut)
 - `mode=watch` is **Watch** mode: no −/+ or taps, and each press of the step's button (Start!, Chop!, Share!, Count!, Keep!, Again!) plays that step as an animation. Without it the problem is **Interactive**.
 
 For example `?n=3&d=4&of=24&item=pizza&mode=watch`. While a problem is being worked the app adds `step=` for the browser's Back button; links shouldn't include it.
