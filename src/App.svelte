@@ -550,6 +550,8 @@
       else if (step === 'sprinkles') (more ? throwSprinkle : unthrowSprinkle)()
       else if (step === 'count' && more) countNext()
     } else if (event.key === 'Enter' || event.key === ' ') {
+      // A focused button or link (sound, settings, menu) handles its own key.
+      if ((event.target as Element).closest?.('button, a, input, [role="button"]')) return
       event.preventDefault()
       confirm()
     }
@@ -746,6 +748,8 @@
     height: 100dvh;
     display: grid;
     grid-template-rows: 104px auto minmax(0, 1fr) auto;
+    /* Never wider than the screen, even if a row's content asks for more. */
+    grid-template-columns: minmax(0, 1fr);
     overflow: hidden;
     position: relative;
   }

@@ -117,6 +117,45 @@
     }
   }
 
+  /* Phones: smaller buttons so ±5, −, + and the number fit across. The number keeps
+     its size, so the controls stay as tall as on the other steps. */
+  @media (max-width: 480px) {
+    .stepper {
+      gap: 10px;
+    }
+
+    .round {
+      width: 60px;
+      height: 60px;
+      font-size: 36px;
+    }
+
+    .five {
+      width: 50px;
+      height: 44px;
+      font-size: 20px;
+    }
+
+    .value {
+      min-width: 76px;
+    }
+  }
+
+  @media (max-width: 380px) {
+    .stepper {
+      gap: 8px;
+    }
+
+    .round {
+      width: 54px;
+      height: 54px;
+    }
+
+    .five {
+      width: 44px;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .number { animation: none; }
   }
