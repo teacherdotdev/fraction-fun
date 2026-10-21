@@ -17,13 +17,19 @@
     chopOffset,
     focusOn,
     groupCentre,
+    PEPPERONI_RADIUS,
+    SHAPES,
     sprinkleSlots,
     wedgePath,
     type Point,
   } from '../lib/donut'
+  import { ITEM_WORDS, type Item } from '../lib/items'
+  import { CHEESE_BLOBS, CHEESE_PATH, SAUCE_PATH } from '../lib/pizzaArt'
   import { MAX_WHOLE } from '../lib/problem'
 
   type Props = {
+    /** The food being shared: a donut with sprinkles, or a pizza with pepperoni. */
+    item?: Item
     /** Groups shown as cut lines before the chop, or as pieces after it. */
     groups: number
     chopped: boolean
@@ -54,6 +60,7 @@
   }
 
   let {
+    item = 'donut',
     groups,
     chopped,
     chopping = false,
@@ -74,10 +81,17 @@
     onGroupTap,
   }: Props = $props()
 
+  const words = $derived(ITEM_WORDS[item])
+  const shape = $derived(SHAPES[item])
   const FROSTING = '#f28ab0'
+  const CHEESE = '#ffd970'
   // Kept groups keep the normal frosting (picked vs not is shown by greying the
   // rest); a hot-pink glaze made the red sprinkles hard to see.
   const GLAZE = FROSTING
+  /** Where the cut lines start: just inside the hole, or the very centre of a pizza. */
+  const cutFrom = $derived(CENTER - Math.max(shape.hole - 6, 0))
+  /** How far a count number sits above its piece, so the piece still shows. */
+  const countLift = $derived(item === 'pizza' ? 14 : 9)
   const RING = (r: number) =>
     `M${CENTER - r} ${CENTER}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0Z`
 
@@ -106,7 +120,7 @@
   })
 
   const slots = $derived(
-    Array.from({ length: groups }, (_, i) => sprinkleSlots(i, groups, Math.ceil(MAX_WHOLE / groups))),
+    Array.from({ length: groups }, (_, i) => sprinkleSlots(i, groups, Math.ceil(MAX_WHOLE / groups), item)),
   )
   // Pre-compute fall directions so each piece tumbles its own way.
   const tumbles = $derived(
@@ -172,7 +186,7 @@
   }
 
   /** Group badges shrink on thin pieces (11ths, 12ths) so neighbours don't overlap. */
-  const badgeRadius = $derived(Math.min(28, 115 * Math.sin(Math.PI / groups) * 0.8))
+  const badgeRadius = $derived(Math.min(28, shape.badgeAt * Math.sin(Math.PI / groups) * 0.8))
 
   /** Drops every launch animation, so groups sit back where they belong. */
   export function settle() {
@@ -183,7 +197,7 @@
   export function badgePoint(group: number): Point | null {
     const matrix = (groupEls[group] ?? svg)?.getScreenCTM()
     if (!matrix) return null
-    const at = groupCentre(group, groups)
+    const at = groupCentre(group, groups, item)
     const p = new DOMPoint(at.x, at.y).matrixTransform(matrix)
     return { x: p.x, y: p.y }
   }
@@ -223,7 +237,7 @@
 
   const camera = $derived.by(() => {
     if (focus === null || !chopped) return 'transform: none'
-    const { centre, scale } = focusOn(focus, groups)
+    const { centre, scale } = focusOn(focus, groups, item)
     return `transform: translate(200px, 200px) scale(${scale}) translate(${-centre.x}px, ${-centre.y}px)`
   })
 
@@ -233,12 +247,15 @@
       return `transform: translate(${t.x}px, 700px) rotate(${t.spin}deg); opacity: 0;`
     }
     const offset = spread ? chopOffset(i, groups, !snapped) : { x: 0, y: 0, tilt: 0 }
-    const pivot = groupCentre(i, groups)
+    const pivot = groupCentre(i, groups, item)
     return `transform: translate(${offset.x}px, ${offset.y}px) rotate(${offset.tilt}deg); transform-origin: ${pivot.x}px ${pivot.y}px;`
   }
 </script>
 
 {#snippet art(frosting: string, shine: boolean)}
+  {#if item === 'pizza'}
+    {@render pizzaArt(shine)}
+  {:else}
   <g class="art">
   <path d={`${RING(186)} ${RING(56)}`} fill="#e3a35c" fill-rule="evenodd" />
   <path
@@ -257,6 +274,32 @@
     <path d="M90 204C90 196 91 189 93 183" />
   </g>
   </g>
+  {/if}
+{/snippet}
+
+<!-- The same flat style as the donut: base colours, one shadow ink, white highlights. -->
+{#snippet pizzaArt(shine: boolean)}
+  <g class="art">
+    <path d={RING(186)} fill="#e8a955" />
+    <path
+      d={`${RING(186)} M12 190a180 180 0 1 1 360 0a180 180 0 1 1 -360 0Z`}
+      fill-rule="evenodd"
+      fill="#2b2b3a"
+      opacity="0.16"
+      clip-path="url(#donut-dough)"
+      class="rim"
+    />
+    <path d={SAUCE_PATH} fill="#ec5a32" />
+    <path d={CHEESE_PATH} fill="#2b2b3a" opacity="0.16" transform="translate(3 6)" />
+    <path d={CHEESE_PATH} fill={CHEESE} class="frosting" />
+    <g fill="#fff" opacity="0.4">
+      {#each CHEESE_BLOBS as blob, i (i)}<path d={blob} />{/each}
+    </g>
+    <g fill="none" stroke="#fff" stroke-linecap="round" stroke-width={shine ? 13 : 10} opacity={shine ? 0.55 : 0.4}>
+      <path d="M30 154.5A176 176 0 0 1 125.5 40.5" />
+      <path d="M30 245.5A176 176 0 0 1 24.5 215.5" />
+    </g>
+  </g>
 {/snippet}
 
 {#snippet sprinkle(s: LandedSprinkle, at: Point, tap?: () => void)}
@@ -267,7 +310,7 @@
     style={`transform: translate(${at.x}px, ${at.y}px)`}
     role={tap ? 'button' : undefined}
     tabindex={tap ? 0 : undefined}
-    aria-label={tap ? 'Count this sprinkle' : undefined}
+    aria-label={tap ? `Count this ${words.topping}` : undefined}
     onclick={tap}
     onkeydown={(event) => {
       if (tap && (event.key === 'Enter' || event.key === ' ')) {
@@ -278,10 +321,24 @@
     }}
   >
     {#if tap}<circle r="21" fill="transparent" />{/if}
+    {#if item === 'pizza'}
+      <!-- A pepperoni: a darker rim round a red middle, flecked with fat. -->
+      <g class="land">
+        <circle cx="1" cy="2.5" r={PEPPERONI_RADIUS} fill="#2b2b3a" opacity="0.2" />
+        <g transform={`rotate(${s.rotation})`}>
+          <circle r={PEPPERONI_RADIUS} fill="#a3261f" />
+          <circle cx="-0.5" cy="-0.5" r={PEPPERONI_RADIUS - 2.5} fill="#c4372b" />
+          <circle cx="-3.5" cy="-2.5" r="1.9" fill="#f3b892" />
+          <circle cx="3.5" cy="1.5" r="1.6" fill="#f3b892" />
+          <circle cx="-0.5" cy="4.5" r="1.7" fill="#f3b892" />
+        </g>
+      </g>
+    {:else}
     <g class="land">
       <rect x="-13" y="-4.5" width="26" height="9" rx="4.5" fill="#2b2b3a" opacity="0.18" transform={`translate(1 2.5) rotate(${s.rotation})`} />
       <rect x="-13" y="-4.5" width="26" height="9" rx="4.5" fill={s.color} transform={`rotate(${s.rotation})`} />
     </g>
+    {/if}
   </g>
 {/snippet}
 
@@ -292,7 +349,7 @@
   class:grey-art={greyArt}
   viewBox="-20 -20 440 440"
   role="img"
-  aria-label={chopped ? `A donut cut into ${groups} equal groups` : 'A donut'}
+  aria-label={chopped ? `A ${words.name} cut into ${groups} equal groups` : `A ${words.name}`}
 >
   <defs>
     <clipPath id="donut-dough"><path d={`${RING(186)} ${RING(56)}`} clip-rule="evenodd" /></clipPath>
@@ -318,9 +375,9 @@
       <g class="cuts" class:chopping>
         {#each Array.from({ length: groups }) as _, i (i)}
           <g class="cut" style={`transform: rotate(${(i * 360) / groups}deg); --delay: ${i * 70}ms`}>
-            <line x1="200" y1="150" x2="200" y2="2" class="cut-band" />
-            <line x1="200" y1="150" x2="200" y2="2" class="cut-line" />
-            {#if chopping}<line x1="200" y1="2" x2="200" y2="150" class="slash" pathLength="100" />{/if}
+            <line x1="200" y1={cutFrom} x2="200" y2="2" class="cut-band" />
+            <line x1="200" y1={cutFrom} x2="200" y2="2" class="cut-line" />
+            {#if chopping}<line x1="200" y1="2" x2="200" y2={cutFrom} class="slash" pathLength="100" />{/if}
           </g>
         {/each}
       </g>
@@ -368,8 +425,8 @@
         </g>
         {#each sprinkles.filter((s) => s.group === i && counts.has(s.id)) as s (s.id)}
           {@const at = slots[i][s.slot]}
-          <!-- Sits just above its sprinkle so the sprinkle still shows. -->
-          <g class="badge" style={`transform: translate(${at.x}px, ${at.y - 9}px)`}>
+          <!-- Sits just above its sprinkle (or pepperoni) so the piece still shows. -->
+          <g class="badge" style={`transform: translate(${at.x}px, ${at.y - countLift}px)`}>
             <g class="pop">
               <circle r="9" fill="#fff" stroke="#2b2b3a" stroke-width="2" />
               <text text-anchor="middle" dominant-baseline="central" y="1">{counts.get(s.id)}</text>
@@ -377,7 +434,7 @@
           </g>
         {/each}
         {#if groupBadges.has(i)}
-          {@const at = groupCentre(i, groups)}
+          {@const at = groupCentre(i, groups, item)}
           <g class="badge big" style={`transform: translate(${at.x}px, ${at.y}px)`}>
             <g class="pop">
               <circle r={badgeRadius} fill="#fff" stroke="#2b2b3a" stroke-width={badgeRadius / 8} />

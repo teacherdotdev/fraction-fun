@@ -1,6 +1,6 @@
 # Fraction Fun
 
-A student-facing activity for finding a fraction of a whole number by cutting a donut into equal groups and sharing sprinkles onto it.
+A student-facing activity for finding a fraction of a whole number by cutting a round food (a donut or a pizza) into equal groups and sharing toppings onto it.
 
 ## Language
 
@@ -11,11 +11,11 @@ One "What is _n_/_d_ of _whole_?" question, worked through all six steps. One li
 _Avoid_: Question (that's the first step), exercise, level
 
 **Whole**:
-The number we're finding a fraction of; it's how many sprinkles get shared.
+The number we're finding a fraction of; it's how many toppings get shared.
 _Avoid_: Total, amount, number
 
 **Denominator**:
-How many equal groups the donut is cut into.
+How many equal groups the item is cut into.
 _Avoid_: Slices, bottom number
 
 **Numerator**:
@@ -24,24 +24,39 @@ _Avoid_: Top number, parts wanted
 
 ### On screen
 
+**Item**:
+The round food a problem is worked on: a **donut** (the default) or a **pizza**. One problem uses one item from start to finish.
+_Avoid_: Food, object, shape
+
 **Donut**:
-The single object every problem is worked on.
-_Avoid_: Apple, food, object
+The default item: a ring with a hole in the middle, frosted on top.
+_Avoid_: Bagel, ring
+
+**Pizza**:
+The other item: a whole round pizza with no hole, so its groups are wedges that meet in the middle.
+_Avoid_: Pie
 
 **Cut line**:
-A dotted preview of where the donut will be chopped, shown before chopping.
+A dotted preview of where the item will be chopped, shown before chopping.
 _Avoid_: Slice line, divider, slicer
 
 **Group**:
-One equal piece of the chopped donut together with the sprinkles on it. The only word students see for it.
+One equal piece of the chopped item together with the toppings on it. The only word students see for it, on a pizza too.
 _Avoid_: Slice, part, quadrant, section, piece
 
+**Topping**:
+One unit of the whole, thrown onto a group. Each item has its own: **sprinkles** on a donut, **pepperoni** on a pizza (one pepperoni, two pepperoni). Students only ever see the item's own word.
+_Avoid_: Counter, object, item, dot, piece
+
 **Sprinkle**:
-One unit of the whole, thrown onto a group.
-_Avoid_: Counter, object, item, dot
+The donut's topping.
+
+**Pepperoni**:
+The pizza's topping. The same word for one or many.
+_Avoid_: Pepperonis, salami
 
 **Dealing**:
-Sprinkles landing on each group in turn, so every group always has an equal share or is one behind.
+Toppings landing on each group in turn, so every group always has an equal share or is one behind.
 _Avoid_: Distributing, dropping
 
 **Glazed group**:
@@ -63,11 +78,11 @@ _Avoid_: Error, feedback, wrong answer
 ### Steps
 
 **Step**:
-One screen of a problem, in order: **Question**, **Groups**, **Sprinkles**, **Count**, **Pick**, **Answer**. Every problem has all six, unit fractions included.
+One screen of a problem, in order: **Question**, **Groups**, **Toppings**, **Count**, **Pick**, **Answer**. Every problem has all six, unit fractions included.
 _Avoid_: Screen, stage, phase, level
 
 **Counted group**:
-The one group whose sprinkles the student counts. Its count is the unit share: one _d_-th of the whole.
+The one group whose toppings the student counts. Its count is the unit share: one _d_-th of the whole.
 _Avoid_: First group, sample
 
 ### Scaffolds
@@ -79,7 +94,7 @@ _Avoid_: Guided mode, support, help
 The scaffolds are:
 - **Cut preview**: cut lines show while choosing the number of groups.
 - **Hints**: a wrong confirm gets a hint instead of nothing.
-- **Auto-dealing**: sprinkles deal themselves onto groups as they're thrown.
-- **Counting stop**: each sprinkle can only be counted once, and Done! only appears once every sprinkle in the counted group is counted.
+- **Auto-dealing**: toppings deal themselves onto groups as they're thrown.
+- **Counting stop**: each topping can only be counted once, and Done! only appears once every topping in the counted group is counted.
 - **Running math**: while picking, the sum of the kept groups shows as it grows ("5 + 5 = 10").
 - **Island highlight**: the part of the problem that matters for the current step stands out in the island.
