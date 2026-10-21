@@ -1,3 +1,4 @@
+import { toppingsFor, type Item } from './items'
 import { fractionName, fractionWords, numberWord, shareOf, type Problem } from './problem'
 
 export type Step = 'question' | 'groups' | 'sprinkles' | 'count' | 'pick' | 'answer'
@@ -32,7 +33,7 @@ export type Hint = {
 }
 
 /** Hints get more direct with each wrong try (attempt 1, 2, 3+), but never set the value. */
-export function hintFor(problem: Problem, step: Step, attempt: number): Hint | null {
+export function hintFor(problem: Problem, step: Step, attempt: number, item: Item = 'donut'): Hint | null {
   if (attempt < 1) return null
   const pieces = capitalise(fractionName(problem.denominator, 2))
   const level = Math.min(attempt, 3)
@@ -43,7 +44,7 @@ export function hintFor(problem: Problem, step: Step, attempt: number): Hint | n
     ],
     sprinkles: [
       `We're finding ${fractionWords(problem)} of how many?`,
-      `We're sharing ${problem.whole} sprinkles.`,
+      `We're sharing ${problem.whole} ${toppingsFor(item, problem.whole)}.`,
     ],
     pick: [
       `How many ${fractionName(problem.denominator, 2)} does the question ask for?`,

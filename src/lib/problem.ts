@@ -153,7 +153,7 @@ export function problemIssues({ numerator, denominator, whole }: Problem): Probl
   } else if (whole > MAX_WHOLE) {
     issues.push({
       field: 'whole',
-      message: `The whole can be at most ${MAX_WHOLE}, so students can still count the sprinkles.`,
+      message: `The whole can be at most ${MAX_WHOLE}, so students can still count them.`,
       suggestions: nearestWholes(whole, denominator),
     })
   } else if (denominatorOk && whole % denominator !== 0) {

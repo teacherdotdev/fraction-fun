@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { countingOrder, dealTo, sprinkleSlots } from './donut'
+import { angleOf, CENTER, countingOrder, dealTo, focusOn, PEPPERONI_RADIUS, sprinkleSlots } from './donut'
 import { planFlight, positionAt } from './flight'
+import { itemFromParams, toppingsFor } from './items'
+import { CHEESE_MIN_RADIUS } from './pizzaArt'
 import { answerOf, DEFAULT_PROBLEM, fractionWords, problemFromParams, shareOf } from './problem'
 import { hintFor, nextStep, STEPS, targetFor } from './steps'
 
@@ -109,6 +111,84 @@ describe('dealing', () => {
     expect([...countingOrder(slots, 0, 4)].sort((a, b) => a - b)).toEqual(
       slots.map((_, i) => i),
     )
+  })
+})
+
+describe('items', () => {
+  it('reads ?item=pizza and treats anything else as a donut', () => {
+    expect(itemFromParams(params('item=pizza&n=1&d=4&of=20'))).toBe('pizza')
+    expect(itemFromParams(params(''))).toBe('donut')
+    expect(itemFromParams(params('item=Pizza'))).toBe('donut')
+    expect(itemFromParams(params('item=bagel'))).toBe('donut')
+  })
+
+  it('names the pieces for each item', () => {
+    expect(toppingsFor('donut', 1)).toBe('sprinkle')
+    expect(toppingsFor('donut', 20)).toBe('sprinkles')
+    expect(toppingsFor('pizza', 1)).toBe('pepperoni')
+    expect(toppingsFor('pizza', 20)).toBe('pepperoni')
+    expect(hintFor(DEFAULT_PROBLEM, 'sprinkles', 2, 'pizza')?.text).toBe("We're sharing 20 pepperoni.")
+    expect(hintFor(DEFAULT_PROBLEM, 'sprinkles', 2)?.text).toBe("We're sharing 20 sprinkles.")
+  })
+})
+
+describe('pepperoni on a pizza', () => {
+  // Every group count, with the most pepperoni each group can get (48 shared out).
+  const cases = Array.from({ length: 11 }, (_, i) => i + 2).map((groups) => ({
+    groups,
+    count: Math.floor(48 / groups),
+  }))
+
+  it.each(cases)('never overlap in $groups groups of $count', ({ groups, count }) => {
+    for (let index = 0; index < groups; index += 1) {
+      const slots = sprinkleSlots(index, groups, count, 'pizza')
+      const closest = Math.min(
+        ...slots.flatMap((a, i) => slots.slice(i + 1).map((b) => Math.hypot(a.x - b.x, a.y - b.y))),
+      )
+      // A clear gap between neighbours, not just touching.
+      expect(closest).toBeGreaterThan(PEPPERONI_RADIUS * 2 + 2)
+    }
+  })
+
+  it.each(cases)('stay whole inside their slice and on the cheese in $groups groups', ({ groups, count }) => {
+    for (let index = 0; index < groups; index += 1) {
+      const start = angleOf(index, groups)
+      const span = (Math.PI * 2) / groups
+      for (const p of sprinkleSlots(index, groups, count, 'pizza')) {
+        const radius = Math.hypot(p.x - CENTER, p.y - CENTER)
+        const turn = (((Math.atan2(p.y - CENTER, p.x - CENTER) - start) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
+        expect(turn).toBeLessThanOrEqual(span)
+        // Straight-line distance to each cut is more than a pepperoni's radius.
+        const toCut = (t: number) => (t >= Math.PI / 2 ? radius : radius * Math.sin(t))
+        expect(toCut(turn)).toBeGreaterThan(PEPPERONI_RADIUS + 1)
+        expect(toCut(span - turn)).toBeGreaterThan(PEPPERONI_RADIUS + 1)
+        // On the cheese, clear of the sauce and crust.
+        expect(radius + PEPPERONI_RADIUS).toBeLessThanOrEqual(CHEESE_MIN_RADIUS)
+      }
+    }
+  })
+
+  it('leave the donut exactly as it was', () => {
+    expect(sprinkleSlots(2, 6, 8, 'donut')).toEqual(sprinkleSlots(2, 6, 8))
+    // Pinned from before pizzas existed, so the donut's sprinkles never move.
+    const before = [
+      { x: 334.55818065524784, y: 227.71406274432405 },
+      { x: 286.37841853178094, y: 242.7496303790514 },
+      { x: 301.3902644858037, y: 209.73447100247748 },
+      { x: 313.8643829443874, y: 254.8952293234624 },
+    ]
+    sprinkleSlots(3, 12, 4).forEach((slot, i) => {
+      expect(slot.x).toBeCloseTo(before[i].x, 9)
+      expect(slot.y).toBeCloseTo(before[i].y, 9)
+    })
+  })
+
+  it('zoom keeps a pizza slice inside the clear middle of the view', () => {
+    for (let groups = 2; groups <= 12; groups += 1) {
+      const { scale } = focusOn(0, groups, 'pizza')
+      expect(scale).toBeGreaterThanOrEqual(1)
+      expect(scale).toBeLessThanOrEqual(focusOn(0, groups).scale)
+    }
   })
 })
 

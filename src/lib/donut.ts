@@ -1,14 +1,51 @@
-// Geometry for a donut drawn in a 400×400 box centred on (200, 200).
+// Geometry for a donut (or a pizza) drawn in a 400×400 box centred on (200, 200).
 // Group 0 starts at twelve o'clock and groups go clockwise.
+
+import type { Item } from './items'
+import { MAX_WHOLE } from './problem'
 
 export const CENTER = 200
 export const OUTER_RADIUS = 186
 export const HOLE_RADIUS = 56
-/** Sprinkles stay on the frosting, between these radii. */
-const SPRINKLE_INNER = 92
-const SPRINKLE_OUTER = 138
 /** How far each group sits out from the centre once chopped. */
 export const CHOP_GAP = 12
+/** A pepperoni's radius. */
+export const PEPPERONI_RADIUS = 11.5
+
+/** The parts of an item's geometry that differ between a donut and a pizza. */
+export type ItemShape = {
+  /** Radius of the hole in the middle; 0 for none. */
+  hole: number
+  /** Toppings stay between these radii. */
+  toppingInner: number
+  toppingOuter: number
+  /**
+   * How far a topping's centre keeps from each cut, measured straight across.
+   * Without it, toppings keep an angular margin (the donut's original rule).
+   */
+  cutClearance?: number
+  /** Distance from the centre to a group's badge. */
+  badgeAt: number
+  /** Candidates tried for each slot; more packs toppings more evenly. */
+  candidates: number
+  /** Whole layouts tried, keeping the roomiest; 1 for the plain seeded one. */
+  layouts: number
+}
+
+export const SHAPES: Record<Item, ItemShape> = {
+  donut: { hole: HOLE_RADIUS, toppingInner: 92, toppingOuter: 138, badgeAt: 115, candidates: 80, layouts: 1 },
+  // Pepperoni sit anywhere on the cheese, clear of the crust and of every cut,
+  // so even a thin twelfth keeps its pepperoni whole.
+  pizza: {
+    hole: 0,
+    toppingInner: 0,
+    toppingOuter: 136,
+    cutClearance: PEPPERONI_RADIUS + 2.5,
+    badgeAt: 115,
+    candidates: 100,
+    layouts: 8,
+  },
+}
 
 export type Point = { x: number; y: number }
 
@@ -41,6 +78,7 @@ export function wedgePath(index: number, groups: number): string {
  * so it looks cut apart; then it snaps back into the neat ring.
  */
 export function chopOffset(index: number, groups: number, burst = false): Point & { tilt: number } {
+  // The same for every item.
   if (groups === 1) return { x: 0, y: 0, tilt: 0 }
   const middle = angleOf(index + 0.5, groups)
   const distance = burst ? CHOP_GAP + 6 + ((index * 7) % 3) * 3 : CHOP_GAP
@@ -52,50 +90,107 @@ export function chopOffset(index: number, groups: number, burst = false): Point 
 }
 
 /** How to zoom so one group fills the view: the point to centre on and the scale. */
-export function focusOn(index: number, groups: number): { centre: Point; scale: number } {
+export function focusOn(
+  index: number,
+  groups: number,
+  item: Item = 'donut',
+): { centre: Point; scale: number } {
   if (groups === 1) return { centre: { x: CENTER, y: CENTER }, scale: 1 }
   const offset = chopOffset(index, groups)
   const points: Point[] = []
   for (let step = 0; step <= 16; step += 1) {
     const angle = angleOf(index + step / 16, groups)
-    points.push(polar(OUTER_RADIUS, angle), polar(HOLE_RADIUS, angle))
+    points.push(polar(OUTER_RADIUS, angle), polar(SHAPES[item].hole, angle))
   }
   const xs = points.map((p) => p.x + offset.x)
   const ys = points.map((p) => p.y + offset.y)
   const width = Math.max(...xs) - Math.min(...xs)
   const height = Math.max(...ys) - Math.min(...ys)
-  return {
-    centre: { x: (Math.max(...xs) + Math.min(...xs)) / 2, y: (Math.max(...ys) + Math.min(...ys)) / 2 },
-    scale: Math.min(Math.max(340 / Math.max(width, height), 1), 2.4),
+  const centre = { x: (Math.max(...xs) + Math.min(...xs)) / 2, y: (Math.max(...ys) + Math.min(...ys)) / 2 }
+  let scale = Math.min(Math.max(340 / Math.max(width, height), 1), 2.4)
+  const { hole, toppingOuter, cutClearance = 0 } = SHAPES[item]
+  if (hole === 0) {
+    // A slice with no hole comes to a point at the centre, and its toppings go right
+    // down into it. Fitting the box would push that point into the view's faded
+    // corner, so also keep every place a topping can sit inside the zoom's clear circle.
+    const span = (Math.PI * 2) / groups
+    const deepest = Math.min(cutClearance / Math.sin(Math.min(span / 2, Math.PI / 2)), toppingOuter)
+    const reach =
+      PEPPERONI_RADIUS +
+      Math.max(
+        ...Array.from({ length: 17 }, (_, step) => polar(toppingOuter, angleOf(index + step / 16, groups)))
+          .concat(polar(deepest, angleOf(index + 0.5, groups)))
+          .map((p) => Math.hypot(p.x + offset.x - centre.x, p.y + offset.y - centre.y)),
+      )
+    scale = Math.max(1, Math.min(scale, ZOOM_CLEAR / reach))
   }
+  return { centre, scale }
 }
 
-/** The visual centre of a group's frosting, for badges. */
-export function groupCentre(index: number, groups: number): Point {
-  return polar((SPRINKLE_INNER + SPRINKLE_OUTER) / 2, angleOf(index + 0.5, groups))
+/** How far from the middle of the view a zoomed-in topping stays fully clear of the faded edge. */
+const ZOOM_CLEAR = 165
+
+/** The visual centre of a group's frosting (or cheese), for badges. */
+export function groupCentre(index: number, groups: number, item: Item = 'donut'): Point {
+  return polar(SHAPES[item].badgeAt, angleOf(index + 0.5, groups))
 }
 
 /**
  * Spread-out sprinkle positions inside one group, in the order they get filled.
  * Uses best-candidate sampling with a fixed seed so a problem always looks the same.
  */
-export function sprinkleSlots(index: number, groups: number, count: number): Point[] {
-  const random = seeded(index * 977 + groups * 131 + 7)
+export function sprinkleSlots(index: number, groups: number, count: number, item: Item = 'donut'): Point[] {
+  const { layouts } = SHAPES[item]
+  if (layouts === 1) return layout(index, groups, count, item, 0)
+  // Big round toppings in a thin slice can end up crowded by chance, so try a few
+  // layouts (each filled to the most a group can hold) and keep the roomiest.
+  // Taking the first `count` of it keeps the slots the same whatever the count.
+  const most = Math.max(count, Math.ceil(MAX_WHOLE / groups))
+  let best: Point[] = []
+  let bestSpacing = -1
+  for (let variant = 0; variant < layouts; variant += 1) {
+    const slots = layout(index, groups, most, item, variant)
+    const spacing = closestPair(slots)
+    if (spacing > bestSpacing) {
+      best = slots
+      bestSpacing = spacing
+    }
+  }
+  return best.slice(0, count)
+}
+
+function closestPair(slots: Point[]): number {
+  let closest = Infinity
+  for (let a = 0; a < slots.length; a += 1) {
+    for (let b = a + 1; b < slots.length; b += 1) {
+      closest = Math.min(closest, Math.hypot(slots[a].x - slots[b].x, slots[a].y - slots[b].y))
+    }
+  }
+  return closest
+}
+
+function layout(index: number, groups: number, count: number, item: Item, variant: number): Point[] {
+  const random = seeded(index * 977 + groups * 131 + 7 + variant * 7919)
+  const { toppingInner, toppingOuter, cutClearance, candidates } = SHAPES[item]
   const span = (Math.PI * 2) / groups
   const start = angleOf(index, groups)
   // Keep sprinkles clear of the cut on both sides.
-  const margin = Math.min(span * 0.12, 16 / SPRINKLE_INNER)
+  const margin = cutClearance === undefined ? Math.min(span * 0.12, 16 / toppingInner) : 0
+  // Area-uniform radius so the outer band isn't sparse.
+  const candidateAt = () =>
+    polar(
+      Math.sqrt(toppingInner ** 2 + random() * (toppingOuter ** 2 - toppingInner ** 2)),
+      start + margin + random() * (span - margin * 2),
+    )
+  const fits = (p: Point) => cutClearance === undefined || clearOfCuts(p, start, span, cutClearance)
   const slots: Point[] = []
   for (let n = 0; n < count; n += 1) {
     let best: Point | null = null
     let bestDistance = -1
-    for (let tries = 0; tries < 80; tries += 1) {
-      // Area-uniform radius so the outer band isn't sparse.
-      const radius = Math.sqrt(
-        SPRINKLE_INNER ** 2 + random() * (SPRINKLE_OUTER ** 2 - SPRINKLE_INNER ** 2),
-      )
-      const angle = start + margin + random() * (span - margin * 2)
-      const candidate = polar(radius, angle)
+    for (let tries = 0, draws = 0; tries < candidates && draws < candidates * 50; draws += 1) {
+      const candidate = candidateAt()
+      if (!fits(candidate)) continue
+      tries += 1
       const nearest = slots.reduce(
         (closest, slot) => Math.min(closest, Math.hypot(slot.x - candidate.x, slot.y - candidate.y)),
         Infinity,
@@ -108,6 +203,17 @@ export function sprinkleSlots(index: number, groups: number, count: number): Poi
     slots.push(best!)
   }
   return slots
+}
+
+/** Whether a point is at least `clearance` from both cuts of the wedge starting at `start`. */
+function clearOfCuts(p: Point, start: number, span: number, clearance: number): boolean {
+  if (span >= Math.PI * 2) return true
+  const radius = Math.hypot(p.x - CENTER, p.y - CENTER)
+  const angle = Math.atan2(p.y - CENTER, p.x - CENTER) - start
+  const into = ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
+  // Straight-line distance to a cut ray that is `turn` radians away.
+  const toCut = (turn: number) => (turn >= Math.PI / 2 ? radius : radius * Math.sin(turn))
+  return into <= span && toCut(into) >= clearance && toCut(span - into) >= clearance
 }
 
 /** Counting order inside a group: sweep clockwise so the numbers march round. */

@@ -9,6 +9,7 @@
   import { countingOrder, dealTo, sprinkleSlots } from './lib/donut'
   import type { Point } from './lib/donut'
   import { launchPoint, planFlight, positionAt, type Flight } from './lib/flight'
+  import { ITEM_WORDS, itemFromParams, toppingsFor } from './lib/items'
   import {
     answerOf,
     fractionName,
@@ -25,6 +26,9 @@
   const problem = problemFromParams(new URLSearchParams(location.search))
   /** Watch mode: no −/+ or taps; each press plays the next step by itself. */
   const watch = modeFromParams(new URLSearchParams(location.search)) === 'watch'
+  // The food being shared (?item=pizza), and its words: "sprinkles" or "pepperoni".
+  const item = itemFromParams(new URLSearchParams(location.search))
+  const words = ITEM_WORDS[item]
   const share = shareOf(problem)
   const pieces = fractionName(problem.denominator, 2)
   const COLORS = ['#ff4d4d', '#ffb020', '#ffe14d', '#2fbf71', '#3d8bff', '#9b5cff']
@@ -66,7 +70,7 @@
   const flights = new Map<number, FlightEntry>()
   let frame = 0
 
-  const hint = $derived(hintFor(problem, step, attempts))
+  const hint = $derived(hintFor(problem, step, attempts, item))
   const target = $derived(targetFor(problem, step))
 
   const highlight: Highlight = $derived(
@@ -86,7 +90,7 @@
       question: '',
       groups: 'How many equal groups do we need?',
       sprinkles: `What are we splitting into ${pieces}?`,
-      count: 'How many sprinkles in one group?',
+      count: `How many ${words.toppings} in one group?`,
       pick: `How many ${pieces} do we need?`,
       answer: '',
     }[s]
@@ -100,7 +104,7 @@
   /** The counted group's sprinkles, swept clockwise, for counting from the keyboard. */
   const countedSprinkles = $derived.by(() => {
     const inGroup = landed.filter((s) => s.group === COUNTED_GROUP)
-    const slots = sprinkleSlots(COUNTED_GROUP, problem.denominator, Math.ceil(MAX_WHOLE / problem.denominator))
+    const slots = sprinkleSlots(COUNTED_GROUP, problem.denominator, Math.ceil(MAX_WHOLE / problem.denominator), item)
     const order = countingOrder(slots, COUNTED_GROUP, problem.denominator)
     return order.flatMap((slot) => inGroup.filter((s) => s.slot === slot))
   })
@@ -126,7 +130,7 @@
     watch
       ? ''
       : shownStep === 'count'
-      ? 'Tap or click each sprinkle to count it.'
+      ? `Tap or click each ${words.topping} to count it.`
       : shownStep === 'pick'
         ? `Tap or click the ${pieces} you need.`
         : '',
@@ -618,6 +622,7 @@
       <div class="donut-box">
         <Donut
           bind:this={donut}
+          {item}
           groups={chopped ? problem.denominator : groups}
           {chopped}
           {chopping}
@@ -679,14 +684,14 @@
       {@const value = step === 'groups' ? groups : thrown}
       <div class="picked" aria-live="polite">
         {#key value}<span class="number">{value}</span>{/key}
-        <span class="label">{step === 'groups' ? (value === 1 ? 'group' : 'groups') : value === 1 ? 'sprinkle' : 'sprinkles'}</span>
+        <span class="label">{step === 'groups' ? (value === 1 ? 'group' : 'groups') : toppingsFor(item, value)}</span>
       </div>
     {:else if step === 'groups'}
       <Stepper value={groups} label={groups === 1 ? 'group' : 'groups'} onMinus={() => changeGroups(-1)} onPlus={() => changeGroups(1)} {pulse} />
     {:else if step === 'sprinkles'}
       <Stepper
         value={thrown}
-        label={thrown === 1 ? 'sprinkle' : 'sprinkles'}
+        label={toppingsFor(item, thrown)}
         onMinusFive={() => repeat(5, unthrowSprinkle)}
         onMinus={unthrowSprinkle}
         onPlus={throwSprinkle}
@@ -727,7 +732,8 @@
     {#each flying as f (f.id)}
       <span
         class="sprinkle"
-        style={`transform: translate(${f.x}px, ${f.y}px) rotate(${f.rotation}deg) scale(${donut?.unitScale() ?? 1}); background: ${f.color}`}
+        class:pepperoni={item === 'pizza'}
+        style={`transform: translate(${f.x}px, ${f.y}px) rotate(${f.rotation}deg) scale(${donut?.unitScale() ?? 1});${item === 'pizza' ? '' : ` background: ${f.color}`}`}
       ></span>
     {/each}
   </div>
@@ -1106,6 +1112,21 @@
     height: 9px;
     border-radius: 4.5px;
     box-shadow: 1px 2.5px 0 #2b2b3a2e;
+  }
+
+  /* A thrown pepperoni: matches the landed one (rim, red middle, flecks of fat). */
+  .flying .pepperoni {
+    left: -11.5px;
+    top: -11.5px;
+    width: 23px;
+    height: 23px;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 34% 39%, #f3b892 0 1.9px, transparent 2.3px),
+      radial-gradient(circle at 65% 57%, #f3b892 0 1.6px, transparent 2px),
+      radial-gradient(circle at 48% 70%, #f3b892 0 1.7px, transparent 2.1px),
+      radial-gradient(circle at 48% 48%, #c4372b 0 9px, #a3261f 9.4px);
+    box-shadow: 1px 2.5px 0 #2b2b3a33;
   }
 
   .app:not(.started) {
