@@ -6,6 +6,7 @@ import '@fontsource/atkinson-hyperlegible/latin-700.css'
 import './app.css'
 import App from './App.svelte'
 import { preloadSounds } from './lib/sound'
+import Teacher from './Teacher.svelte'
 
 // Cloudflare Web Analytics, production builds only. The token is public (it ships in
 // every page), so the fractionfun.org one lives here unless a build overrides it.
@@ -21,9 +22,11 @@ if (beaconToken) {
   document.head.appendChild(script)
 }
 
-preloadSounds()
+// /teacher is the same single-page app (vercel.json rewrites it to index.html).
+const forTeachers = /^\/teacher\/?$/.test(location.pathname)
+if (!forTeachers) preloadSounds()
 
-const app = mount(App, {
+const app = mount(forTeachers ? Teacher : App, {
   target: document.getElementById('app')!,
 })
 

@@ -73,6 +73,7 @@
           <span aria-hidden="true">·</span>
           <button type="button" aria-haspopup="dialog" onclick={() => show('privacy')}>Privacy</button>
         </p>
+        <a class="setup" href={`/teacher${location.search}`}>Teacher setup</a>
       </div>
     </div>
   {/if}
@@ -190,7 +191,13 @@
     cursor: pointer;
   }
 
+  .setup {
+    color: var(--ink-soft);
+    text-decoration: none;
+  }
+
   .credit:hover,
+  .setup:hover,
   .links button:hover {
     color: var(--accent);
     text-decoration: underline;
