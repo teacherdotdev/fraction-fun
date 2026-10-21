@@ -23,6 +23,9 @@
     close()
     dialog = which
   }
+
+  /** On a scrolling page: scroll away with the content instead of staying put. */
+  let { scrolls = false }: { scrolls?: boolean } = $props()
 </script>
 
 <!-- iOS Safari does not focus a tapped button, so a tap elsewhere never blurs
@@ -43,6 +46,7 @@
 <div
   bind:this={menu}
   class="brand"
+  class:scrolls
   role="presentation"
   onfocusout={(event) => {
     if (!menu.contains(event.relatedTarget as Node | null)) pinned = false
@@ -73,7 +77,6 @@
           <span aria-hidden="true">·</span>
           <button type="button" aria-haspopup="dialog" onclick={() => show('privacy')}>Privacy</button>
         </p>
-        <a class="setup" href={`/teacher${location.search}`}>Teacher setup</a>
       </div>
     </div>
   {/if}
@@ -106,10 +109,9 @@
 
     <h3>Feedback &amp; ideas</h3>
     <p>
-      We’d love to hear from you. Tell us what’s working, what’s not, or the kind of activity you
-      wish you had for your class.
+      Tell us what’s working, what’s not, or what you wish you had for your class:
+      <a href="mailto:support@teacher.dev?subject=Fraction%20Fun%20feedback">support@teacher.dev</a>
     </p>
-    <a class="email" href="mailto:support@teacher.dev?subject=Fraction%20Fun%20feedback">Email support@teacher.dev</a>
   </Modal>
 {:else if dialog === 'privacy'}
   <Modal title="Privacy" closeLabel="Close privacy" returnTo={trigger} onclose={() => (dialog = null)}>
@@ -127,6 +129,10 @@
 {/if}
 
 <style>
+  .brand.scrolls {
+    position: absolute;
+  }
+
   .brand {
     position: fixed;
     top: 18px;
@@ -191,13 +197,7 @@
     cursor: pointer;
   }
 
-  .setup {
-    color: var(--ink-soft);
-    text-decoration: none;
-  }
-
   .credit:hover,
-  .setup:hover,
   .links button:hover {
     color: var(--accent);
     text-decoration: underline;
@@ -206,9 +206,9 @@
 
   /* A polaroid, as on Timer Toolbox. */
   .photo {
-    margin: 18px auto 4px;
-    max-width: 420px;
-    padding: 10px 10px 14px;
+    margin: 14px auto 0;
+    max-width: 230px;
+    padding: 8px 8px 10px;
     background: #fff;
     border-radius: 3px;
     box-shadow: 0 6px 20px #2b2b3a26;
@@ -222,9 +222,9 @@
   }
 
   .photo figcaption {
-    padding-top: 10px;
+    padding-top: 8px;
     text-align: center;
-    font: 18px 'Segoe Script', 'Bradley Hand', 'Snell Roundhand', 'Comic Sans MS', cursive;
+    font: 16px 'Segoe Script', 'Bradley Hand', 'Snell Roundhand', 'Comic Sans MS', cursive;
     color: var(--ink-soft);
   }
 
@@ -233,7 +233,7 @@
   }
 
   h3 {
-    margin: 20px 0 6px;
+    margin: 16px 0 4px;
     font: 700 19px/1.2 var(--font);
     color: var(--ink);
   }
@@ -248,8 +248,9 @@
     margin: 0;
     padding: 0;
     list-style: none;
-    display: grid;
-    gap: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 18px;
     font-weight: 700;
     color: var(--ink);
   }
@@ -268,16 +269,4 @@
     background: var(--accent);
   }
 
-  /* Doubled so it beats the dialog's own link colour. */
-  .email.email {
-    display: inline-flex;
-    align-items: center;
-    min-height: 46px;
-    margin-top: 12px;
-    padding: 0 22px;
-    border-radius: 999px;
-    background: var(--accent);
-    color: #fff;
-    text-decoration: none;
-  }
 </style>

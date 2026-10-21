@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SiteChrome from './components/SiteChrome.svelte'
   import {
     answerOf,
     MAX_DENOMINATOR,
@@ -100,6 +101,7 @@
 </svelte:head>
 
 <div class="teacher">
+  <div class="page">
   <main>
     <header>
       <a class="home" href="/">Fraction Fun</a>
@@ -212,6 +214,8 @@
       <p class="help">Paste the link into Google Classroom, an email or a slide.</p>
     </section>
   </main>
+  <SiteChrome scrolls />
+  </div>
 </div>
 
 <style>
@@ -222,10 +226,16 @@
     -webkit-user-select: text;
   }
 
+  /* The corner buttons sit on this, so they scroll with the page. */
+  .page {
+    position: relative;
+    min-height: 100%;
+  }
+
   main {
     max-width: 640px;
     margin: 0 auto;
-    padding: 32px 16px 48px;
+    padding: 32px 16px 72px;
     display: grid;
     gap: 20px;
   }
@@ -527,10 +537,14 @@
     box-shadow: none;
   }
 
-  @media (max-width: 520px) {
+  /* Clear the logo in the top-left corner once the page is too narrow to sit beside it. */
+  @media (max-width: 800px) {
     main {
-      padding-top: 24px;
+      padding-top: 84px;
     }
+  }
+
+  @media (max-width: 520px) {
 
     .card {
       padding: 16px;

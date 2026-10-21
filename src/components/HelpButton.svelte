@@ -4,9 +4,12 @@
   import Modal from './Modal.svelte'
 
   let open = $state(false)
+
+  /** On a scrolling page: scroll away with the content instead of staying put. */
+  let { scrolls = false }: { scrolls?: boolean } = $props()
 </script>
 
-<button type="button" class="help" aria-label="Help" aria-haspopup="dialog" onclick={() => (open = true)} {@attach ownKeys}>
+<button type="button" class="help" class:scrolls aria-label="Help" aria-haspopup="dialog" onclick={() => (open = true)} {@attach ownKeys}>
   <svg viewBox="0 0 24 24" aria-hidden="true">
     <circle cx="12" cy="12" r="9.5" />
     <path d="M9.4 9.3a2.7 2.7 0 0 1 5.2.9c0 1.8-2.6 2.4-2.6 4" />
@@ -24,6 +27,10 @@
 {/if}
 
 <style>
+  .help.scrolls {
+    position: absolute;
+  }
+
   .help {
     position: fixed;
     left: 12px;

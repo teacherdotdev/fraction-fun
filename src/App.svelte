@@ -592,12 +592,13 @@
     {/if}
   </button>
 
-  {#if step === 'question'}
-    <!-- Low-key and only on the question screen, so students don't land in it mid-problem.
-         Opens the setup with this problem filled in.
-         The logo menu links here too. -->
-    <a class="for-teachers" href={`/teacher${location.search}`}>For teachers</a>
-  {/if}
+  <!-- Teacher setup, beside the sound button. Opens with this problem filled in. -->
+  <a class="settings" href={`/teacher${location.search}`} aria-label="Teacher settings">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  </a>
 
   {#if step !== 'question'}
     <ol class="dots" class:gone={revealing} aria-label="Progress">
@@ -772,27 +773,42 @@
     stroke-linecap: round;
   }
 
-  .for-teachers {
+  .settings {
     position: fixed;
-    right: 18px;
-    bottom: 14px;
+    top: 18px;
+    right: 82px;
     z-index: 6;
-    padding: 6px 10px;
-    border-radius: 999px;
-    color: var(--ink-soft);
-    font: 400 15px/1.2 var(--font-text);
-    text-decoration: none;
-    opacity: 0.75;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 4px 16px #2b2b3a1f;
+    display: grid;
+    place-items: center;
   }
 
-  .for-teachers:hover,
-  .for-teachers:focus-visible {
-    opacity: 1;
-    text-decoration: underline;
+  .settings svg {
+    width: 26px;
+    height: 26px;
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
-  .for-teachers:focus-visible {
-    outline: 3px solid #ffd23f;
+  .settings:focus-visible {
+    outline: 4px solid #ffd23f;
+    outline-offset: 3px;
+  }
+
+  /* Too narrow to sit beside the sound button without meeting the question, so it
+     sits under it instead. */
+  @media (max-width: 560px) {
+    .settings {
+      top: 80px;
+      right: 18px;
+    }
   }
 
   .dots {
