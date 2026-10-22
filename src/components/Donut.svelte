@@ -205,6 +205,28 @@
     return { x: p.x, y: p.y }
   }
 
+  /**
+   * A tap counts the topping nearest the finger, not whichever one's tap area is on
+   * top: in a full group those areas overlap, and one could hide another's middle.
+   */
+  function tapNearest(event: MouseEvent, group: number) {
+    const matrix = groupEls[group]?.getScreenCTM()
+    if (!matrix || !onSprinkleTap) return
+    const p = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse())
+    let nearest: LandedSprinkle | null = null
+    let nearestDistance = Infinity
+    for (const s of sprinkles) {
+      if (s.group !== group) continue
+      const at = slots[group][s.slot]
+      const distance = Math.hypot(at.x - p.x, at.y - p.y)
+      if (distance < nearestDistance) {
+        nearest = s
+        nearestDistance = distance
+      }
+    }
+    if (nearest) onSprinkleTap(nearest.id)
+  }
+
   /** Screen size of one donut unit, so flying sprinkles match landed ones. */
   export function unitScale(): number {
     // The viewBox is 440 units across (the donut plus a 20-unit margin each side).
@@ -317,7 +339,12 @@
     role={tap ? 'button' : undefined}
     tabindex={tap ? 0 : undefined}
     aria-label={tap ? `Count this ${words.topping}` : undefined}
-    onclick={tap}
+    onclick={(event) => {
+      if (!tap) return
+      // detail is 0 for clicks that don't come from a pointer (assistive tech).
+      if (event.detail === 0) tap()
+      else tapNearest(event, s.group)
+    }}
     onkeydown={(event) => {
       if (tap && (event.key === 'Enter' || event.key === ' ')) {
         event.preventDefault()

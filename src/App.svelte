@@ -1012,10 +1012,13 @@
     grid-row: 3;
     min-height: 0;
     display: grid;
+    /* A definite row, so the donut box's height: 100% has something to fill. Left
+       auto, the box falls back to the SVG's default 300px and, on short screens,
+       spills under the controls, which then swallow taps meant for its toppings. */
+    grid-template-rows: minmax(0, 1fr);
     place-items: center;
     padding: 12px;
   }
-
 
   .donut-box {
     transition: opacity 0.5s;
