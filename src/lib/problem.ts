@@ -8,7 +8,7 @@ export const DEFAULT_PROBLEM: Problem = { numerator: 1, denominator: 4, whole: 2
 
 export const MIN_DENOMINATOR = 2
 export const MAX_DENOMINATOR = 12
-export const MAX_WHOLE = 48
+export const MAX_WHOLE = 60
 
 const NUMBER_WORDS = [
   'zero',
@@ -103,7 +103,7 @@ function isValidDenominator(denominator: number): boolean {
 
 /**
  * The wholes closest to `whole` that split evenly into `denominator` groups and stay
- * countable (at most 48): 22 in fourths → [20, 24]. A whole that already works comes
+ * countable (at most 60): 22 in fourths → [20, 24]. A whole that already works comes
  * back on its own. Empty when the denominator itself is out of range.
  */
 export function nearestWholes(whole: number, denominator: number): number[] {

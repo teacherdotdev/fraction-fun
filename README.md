@@ -10,7 +10,7 @@ One link is one problem: `?n=1&d=4&of=20` asks "What is one fourth of 20?" That'
 
 - `d` (groups) is 2–12
 - `n` is 1 to `d − 1`
-- `of` is a multiple of `d`, up to 48
+- `of` is a multiple of `d`, up to 60
 
 Anything invalid falls back to the default.
 

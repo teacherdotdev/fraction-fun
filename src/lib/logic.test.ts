@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { angleOf, CENTER, countingOrder, dealTo, focusOn, SHAPES, sprinkleSlots } from './donut'
 import { planFlight, positionAt } from './flight'
 import { ARRIVAL, ITEM_WORDS, itemFromParams, ITEMS, toppingsFor, type Item } from './items'
-import { answerOf, DEFAULT_PROBLEM, fractionWords, problemFromParams, shareOf } from './problem'
+import { answerOf, DEFAULT_PROBLEM, fractionWords, MAX_WHOLE, problemFromParams, shareOf } from './problem'
 import { hintFor, nextStep, STEPS, targetFor } from './steps'
 
 const params = (query: string) => new URLSearchParams(query)
@@ -32,7 +32,7 @@ describe('problemFromParams', () => {
     'n=1&d=1&of=5',
     'n=4&d=4&of=20', // not a proper fraction
     'n=0&d=4&of=20',
-    'n=1&d=4&of=52', // too many sprinkles
+    'n=1&d=4&of=64', // too many sprinkles
     'n=1&d=4&of=abc',
     'n=1.5&d=4&of=20',
   ])('falls back to the default for %s', (query) => {
@@ -97,7 +97,7 @@ describe('dealing', () => {
 
   it('places sprinkles far enough apart to tell apart', () => {
     for (const groups of [2, 3, 4, 6, 8, 10, 12]) {
-      const slots = sprinkleSlots(0, groups, Math.ceil(48 / groups))
+      const slots = sprinkleSlots(0, groups, Math.ceil(MAX_WHOLE / groups))
       const closest = Math.min(
         ...slots.flatMap((a, i) => slots.slice(i + 1).map((b) => Math.hypot(a.x - b.x, a.y - b.y))),
       )
@@ -164,9 +164,9 @@ describe('items', () => {
 
 describe('toppings on items without a hole', () => {
   const solid: Item[] = ['pizza', 'cookie', 'cake', 'watermelon', 'cheese']
-  // Every item and group count, with the most toppings each group can get (48 shared out).
+  // Every item and group count, with the most toppings each group can get (MAX_WHOLE shared out).
   const cases = solid.flatMap((item) =>
-    Array.from({ length: 11 }, (_, i) => i + 2).map((groups) => ({ item, groups, count: Math.floor(48 / groups) })),
+    Array.from({ length: 11 }, (_, i) => i + 2).map((groups) => ({ item, groups, count: Math.floor(MAX_WHOLE / groups) })),
   )
 
   it.each(cases)('never overlap on a $item in $groups groups of $count', ({ item, groups, count }) => {
@@ -202,21 +202,21 @@ describe('toppings on items without a hole', () => {
   })
 
   it('leave the pizza exactly as it was', () => {
-    // Pinned from before the other items existed, so the pepperoni never move.
+    // Pinned (re-pinned when the whole went up to 60), so the pepperoni never move.
     const twelfth = [
-      { x: 228.58361247224502, y: 300.7564375947102 },
-      { x: 214.16549790695, y: 255.9696838084414 },
-      { x: 222.8299861029203, y: 334.00815043657263 },
-      { x: 250.51563370063133, y: 324.96347718347994 },
+      { x: 228.0516635308866, y: 308.0697389222703 },
+      { x: 214.409615775158, y: 254.4514731224943 },
+      { x: 254.40310110433393, y: 324.52956061513817 },
+      { x: 215.63531602590794, y: 334.2528893594986 },
     ]
     sprinkleSlots(5, 12, 4, 'pizza').forEach((slot, i) => {
       expect(slot.x).toBeCloseTo(twelfth[i].x, 9)
       expect(slot.y).toBeCloseTo(twelfth[i].y, 9)
     })
     const third = [
-      { x: 191.05664695702407, y: 245.2170132716234 },
-      { x: 300.73762560466747, y: 285.2822071533179 },
-      { x: 93.8525773286506, y: 280.2872660308525 },
+      { x: 244.74935073839976, y: 251.72551638948255 },
+      { x: 110.41891176743832, y: 301.9991702456523 },
+      { x: 196.0668729883092, y: 333.6077222509198 },
     ]
     sprinkleSlots(1, 3, 16, 'pizza').slice(0, 3).forEach((slot, i) => {
       expect(slot.x).toBeCloseTo(third[i].x, 9)

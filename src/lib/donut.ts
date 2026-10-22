@@ -181,23 +181,44 @@ export function groupCentre(index: number, groups: number, item: Item = 'donut')
  * Uses best-candidate sampling with a fixed seed so a problem always looks the same.
  */
 export function sprinkleSlots(index: number, groups: number, count: number, item: Item = 'donut'): Point[] {
-  const { layouts } = SHAPES[item]
-  if (layouts === 1) return layout(index, groups, count, item, 0)
+  const { layouts, candidates, toppingRadius } = SHAPES[item]
+  if (layouts === 1) return layout(index, groups, count, item, 0, candidates)
   // Big round toppings in a thin slice can end up crowded by chance, so try a few
   // layouts (each filled to the most a group can hold) and keep the roomiest.
   // Taking the first `count` of it keeps the slots the same whatever the count.
   const most = Math.max(count, Math.ceil(MAX_WHOLE / groups))
+  const key = `${item} ${index} ${groups} ${most}`
+  let best = roomiest.get(key)
+  if (!best) {
+    best = roomiestLayout(index, groups, most, item, layouts, candidates)
+    // Only when that still leaves neighbours touching (big toppings, a full group),
+    // search much harder. It's slow, so it's kept for the few cases that need it.
+    if (closestPair(best) <= toppingRadius * 2 + 2) {
+      best = roomiestLayout(index, groups, most, item, layouts * WIDER, candidates * 3)
+    }
+    roomiest.set(key, best)
+  }
+  return best.slice(0, count)
+}
+
+/** How many times more layouts the harder search tries. */
+const WIDER = 4
+
+/** Layouts already found, since they're slow to search for and never change. */
+const roomiest = new Map<string, Point[]>()
+
+function roomiestLayout(index: number, groups: number, count: number, item: Item, layouts: number, candidates: number): Point[] {
   let best: Point[] = []
   let bestSpacing = -1
   for (let variant = 0; variant < layouts; variant += 1) {
-    const slots = layout(index, groups, most, item, variant)
+    const slots = layout(index, groups, count, item, variant, candidates)
     const spacing = closestPair(slots)
     if (spacing > bestSpacing) {
       best = slots
       bestSpacing = spacing
     }
   }
-  return best.slice(0, count)
+  return best
 }
 
 function closestPair(slots: Point[]): number {
@@ -210,9 +231,9 @@ function closestPair(slots: Point[]): number {
   return closest
 }
 
-function layout(index: number, groups: number, count: number, item: Item, variant: number): Point[] {
+function layout(index: number, groups: number, count: number, item: Item, variant: number, candidates: number): Point[] {
   const random = seeded(index * 977 + groups * 131 + 7 + variant * 7919)
-  const { toppingInner, toppingOuter, cutClearance, candidates } = SHAPES[item]
+  const { toppingInner, toppingOuter, cutClearance } = SHAPES[item]
   const span = (Math.PI * 2) / groups
   const start = angleOf(index, groups)
   // Keep sprinkles clear of the cut on both sides.

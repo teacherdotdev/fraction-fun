@@ -39,11 +39,12 @@ describe('nearestWholes', () => {
     expect(nearestWholes(24, 4)).toEqual([24])
   })
 
-  it('stays between one share each and 48', () => {
+  it('stays between one share each and 60', () => {
     expect(nearestWholes(2, 4)).toEqual([4])
     expect(nearestWholes(0, 7)).toEqual([7])
-    expect(nearestWholes(47, 5)).toEqual([45])
-    expect(nearestWholes(60, 7)).toEqual([42])
+    expect(nearestWholes(47, 5)).toEqual([45, 50])
+    expect(nearestWholes(70, 7)).toEqual([56])
+    expect(nearestWholes(62, 4)).toEqual([60])
     expect(nearestWholes(46, 4)).toEqual([44, 48])
   })
 
@@ -66,7 +67,7 @@ describe('problemIssues', () => {
     expect(fields(4, 4, 20)).toEqual(['numerator'])
     expect(fields(0, 4, 20)).toEqual(['numerator'])
     expect(fields(1, 13, 26)).toEqual(['denominator'])
-    expect(fields(1, 4, 52)).toEqual(['whole'])
+    expect(fields(1, 4, 64)).toEqual(['whole'])
     expect(fields(1, 4, NaN)).toEqual(['whole'])
   })
 
